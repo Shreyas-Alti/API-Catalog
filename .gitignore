@@ -1,0 +1,28 @@
+# ── Backend (Maven / Spring Boot) ─────────────────────
+backend/target/
+backend/.mvn/wrapper/maven-wrapper.jar
+backend/.idea/
+backend/*.iml
+backend/*.iws
+backend/*.ipr
+
+# ── Frontend (Node / Vite) ─────────────────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# ── Environment / secrets ──────────────────────────────
+.env
+.env.local
+.env*.local
+
+# ── OS ────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDE ───────────────────────────────────────────────
+.vscode/settings.json
+.vscode/*.code-workspace
+*.swp
+*.swo
