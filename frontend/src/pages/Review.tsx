@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import type { FormEvent } from 'react'
 import { submitRepository, saveRepository } from '../api/client'
 import type { SubmitResponse, ExtractedApi } from '../api/client'
+import { EndpointDetails } from '../components/EndpointDetails'
 
 const METHODS = ['GET','POST','PUT','DELETE','PATCH']
 const METHOD_COLORS: Record<string, string> = {
@@ -19,6 +20,10 @@ export default function Review() {
   const [editedApis, setEditedApis] = useState<ExtractedApi[]>([])
   const [editingIdx, setEditingIdx] = useState<number | null>(null)
   const [buf, setBuf] = useState<ExtractedApi | null>(null)
+  const [openDetails, setOpenDetails] = useState<Set<number>>(new Set())
+
+  const toggleDetails = (i: number) =>
+    setOpenDetails(prev => { const s = new Set(prev); s.has(i) ? s.delete(i) : s.add(i); return s })
 
   useEffect(() => {
     if (result) setEditedApis(result.apis.map(a => ({ ...a })))
@@ -84,7 +89,7 @@ export default function Review() {
             value={url} onChange={e => setUrl(e.target.value)} required disabled={loading} />
         </div>
         <div className="form-group">
-          <label htmlFor="hostUrl">API Host URL <span className="optional-label">(optional)</span></label>
+          <label htmlFor="hostUrl">API Base URL <span className="optional-label">(optional — where this API is deployed)</span></label>
           <input id="hostUrl" type="url" className="input" placeholder="https://api.myapp.com"
             value={hostUrl} onChange={e => setHostUrl(e.target.value)} disabled={loading} />
         </div>
@@ -105,7 +110,7 @@ export default function Review() {
                 <a href={result.url} target="_blank" rel="noopener noreferrer" className="url-link">{result.url}</a>
                 {result.hostUrl && (
                   <div className="host-url-row">
-                    <span className="host-label">Host:</span>
+                    <span className="host-label">API Base URL:</span>
                     <a href={result.hostUrl} target="_blank" rel="noopener noreferrer" className="url-link">{result.hostUrl}</a>
                   </div>
                 )}
@@ -161,16 +166,39 @@ export default function Review() {
                         </tr>
                       </>
                     ) : (
-                      <tr key={i}>
-                        <td><span className="method-badge" style={{ background: METHOD_COLORS[api.method] ?? '#64748b' }}>{api.method}</span></td>
-                        <td className="mono">{api.path}</td>
-                        <td>{api.controller ?? '—'}</td>
-                        <td>{api.handler ?? '—'}</td>
-                        <td className="action-cell">
-                          <button className="btn-xs btn-gray" onClick={() => startEdit(i)}>Edit</button>
-                          <button className="btn-xs btn-red" onClick={() => deleteRow(i)}>✕</button>
-                        </td>
-                      </tr>
+                      <>
+                        <tr key={i}>
+                          <td><span className="method-badge" style={{ background: METHOD_COLORS[api.method] ?? '#64748b' }}>{api.method}</span></td>
+                          <td className="mono">{api.path}</td>
+                          <td>{api.controller ?? '—'}</td>
+                          <td>{api.handler ?? '—'}</td>
+                          <td className="action-cell">
+                            <button className="btn-xs btn-gray" onClick={() => toggleDetails(i)}
+                              title="Show extracted details">
+                              {openDetails.has(i) ? '▾' : '▸'}
+                            </button>
+                            <button className="btn-xs btn-gray" onClick={() => startEdit(i)}>Edit</button>
+                            <button className="btn-xs btn-red" onClick={() => deleteRow(i)}>✕</button>
+                          </td>
+                        </tr>
+                        {openDetails.has(i) && (
+                          <tr key={`${i}-details`} className="details-row">
+                            <td colSpan={5}>
+                              <EndpointDetails
+                                parameters={api.parameters}
+                                requestBodyType={api.requestBodyType}
+                                requestBodyFields={api.requestBodyFields}
+                                responseBodyType={api.responseBodyType}
+                                responseBodyFields={api.responseBodyFields}
+                                statusCodes={api.statusCodes}
+                                tags={api.tags}
+                                sourceFile={api.sourceFile}
+                                sourceLine={api.sourceLine}
+                              />
+                            </td>
+                          </tr>
+                        )}
+                      </>
                     )
                   ))}
                 </tbody>

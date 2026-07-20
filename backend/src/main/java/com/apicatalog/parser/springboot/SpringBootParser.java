@@ -20,7 +20,7 @@ public class SpringBootParser implements ParserPlugin {
     private static final Pattern CLASS_MAPPING = Pattern.compile(
         "@RequestMapping\\(\\s*(?:value\\s*=\\s*)?[\"']([^\"']+)[\"']");
     private static final Pattern CLASS_NAME_PAT = Pattern.compile(
-        "(?:public|protected|private)?\\s+class\\s+(\\w+)");
+        "(?:public|protected|private)?\\s+(?:class|record)\\s+(\\w+)");
     private static final Pattern TAG_PAT = Pattern.compile(
         "@Tag\\s*\\(\\s*name\\s*=\\s*[\"']([^\"']+)[\"']");
     private static final Pattern OPERATION_SUMMARY = Pattern.compile(
@@ -41,6 +41,9 @@ public class SpringBootParser implements ParserPlugin {
         "@RequestHeader(?:\\(\\s*(?:value\\s*=\\s*)?[\"']([^\"']*)[\"']\\s*\\))?");
     private static final Pattern COOKIE_VAL = Pattern.compile(
         "@CookieValue(?:\\(\\s*(?:value\\s*=\\s*)?[\"']([^\"']*)[\"']\\s*\\))?");
+    // Matches record components: public record Foo(String title, int count) {}
+    private static final Pattern RECORD_COMPONENTS = Pattern.compile(
+        "(?:public|protected|private)?\\s+record\\s+\\w+\\s*\\(([^)]*)\\)");
     private static final Pattern FIELD_DECL = Pattern.compile(
         "private\\s+([\\w<>\\[\\],?\\s]+?)\\s+(\\w+)\\s*[;=]");
     private static final Pattern VALIDATION = Pattern.compile(
@@ -265,7 +268,38 @@ public class SpringBootParser implements ParserPlugin {
         Path cf = idx.get(typeName); if (cf == null) return List.of();
         List<ApiField> fields = new ArrayList<>();
         try {
-            String[] lines = Files.readString(cf).split("\\r?\\n");
+            String content = Files.readString(cf);
+
+            // ── Java record: extract components from the record header ──────
+            Matcher rm = RECORD_COMPONENTS.matcher(content);
+            if (rm.find()) {
+                for (String comp : splitComma(rm.group(1))) {
+                    comp = comp.trim();
+                    if (comp.isEmpty()) continue;
+                    // Strip annotations, then split "Type name"
+                    String stripped = comp.replaceAll("@\\w+(?:\\([^)]*\\))?\\s*", "").trim();
+                    String[] parts = stripped.split("\\s+");
+                    if (parts.length >= 2) {
+                        ApiField f = new ApiField();
+                        f.setType(parts[parts.length - 2]);
+                        f.setName(parts[parts.length - 1]);
+                        // Collect validations from inline annotations
+                        List<String> vals = new ArrayList<>();
+                        Matcher vm = VALIDATION.matcher(comp);
+                        while (vm.find()) {
+                            String a = "@" + vm.group(1);
+                            if (vm.group(2) != null && !vm.group(2).isBlank()) a += "(" + vm.group(2).trim() + ")";
+                            vals.add(a);
+                        }
+                        f.setValidations(vals.isEmpty() ? null : vals);
+                        fields.add(f);
+                    }
+                }
+                return fields; // Record components are the full field list
+            }
+
+            // ── Regular class: extract private fields line by line ──────────
+            String[] lines = content.split("\\r?\\n");
             List<String> pendingV = new ArrayList<>();
             for (String rawLine : lines) {
                 String line = rawLine.trim();

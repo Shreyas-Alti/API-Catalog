@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { getRepositories, getRepository, searchEndpoints } from '../api/client'
 import type { RepositorySummary, RepositoryDetail, SearchResultItem } from '../api/client'
+import { EndpointDetails } from '../components/EndpointDetails'
 
 const METHODS = ['', 'GET', 'POST', 'PUT', 'DELETE', 'PATCH']
 const METHOD_COLORS: Record<string, string> = {
@@ -19,6 +20,10 @@ function useDebounce<T>(value: T, delay: number): T {
 export default function Catalog() {
   // Repo list + expansion
   const [repos, setRepos] = useState<RepositorySummary[]>([])
+  const [openDetails, setOpenDetails] = useState<Set<number>>(new Set())
+  const toggleEp = (id: number) =>
+    setOpenDetails(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
+
   const [loadingRepos, setLoadingRepos] = useState(true)
   const [selected, setSelected] = useState<RepositoryDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -186,7 +191,7 @@ export default function Catalog() {
                     onClick={e => e.stopPropagation()} className="url-link">{repo.url}</a>
                   {repo.hostUrl && (
                     <span className="host-pill" onClick={e => e.stopPropagation()}>
-                      Host: <a href={repo.hostUrl} target="_blank" rel="noopener noreferrer">{repo.hostUrl}</a>
+                      API Base URL: <a href={repo.hostUrl} target="_blank" rel="noopener noreferrer">{repo.hostUrl}</a>
                     </span>
                   )}
                   <span className="meta-pill">{repo.endpointCount} endpoint{repo.endpointCount !== 1 ? 's' : ''}</span>
@@ -203,21 +208,43 @@ export default function Catalog() {
                   ) : (
                     <table className="api-table">
                       <thead>
-                        <tr><th>Method</th><th>Path</th><th>Controller</th><th>Handler</th><th>Description</th></tr>
+                        <tr><th></th><th>Method</th><th>Path</th><th>Controller</th><th>Handler</th><th>Description</th></tr>
                       </thead>
                       <tbody>
                         {selected.endpoints.map(ep => (
-                          <tr key={ep.id}>
-                            <td>
-                              <span className="method-badge" style={{ background: METHOD_COLORS[ep.method] ?? '#64748b' }}>
-                                {ep.method}
-                              </span>
-                            </td>
-                            <td className="mono">{ep.path}</td>
-                            <td>{ep.controller ?? '—'}</td>
-                            <td>{ep.handler ?? '—'}</td>
-                            <td>{ep.description ?? '—'}</td>
-                          </tr>
+                          <>
+                            <tr key={ep.id} className="endpoint-row" onClick={() => toggleEp(ep.id)} style={{ cursor: 'pointer' }}>
+                              <td style={{ width: '1.5rem', color: '#94a3b8', fontSize: '0.75rem' }}>
+                                {openDetails.has(ep.id) ? '▾' : '▸'}
+                              </td>
+                              <td>
+                                <span className="method-badge" style={{ background: METHOD_COLORS[ep.method] ?? '#64748b' }}>
+                                  {ep.method}
+                                </span>
+                              </td>
+                              <td className="mono">{ep.path}</td>
+                              <td>{ep.controller ?? '—'}</td>
+                              <td>{ep.handler ?? '—'}</td>
+                              <td>{ep.description ?? '—'}</td>
+                            </tr>
+                            {openDetails.has(ep.id) && (
+                              <tr key={`${ep.id}-d`} className="details-row">
+                                <td colSpan={6}>
+                                  <EndpointDetails
+                                    parameters={ep.parameters}
+                                    requestBodyType={ep.requestBodyType}
+                                    requestBodyFields={ep.requestBodyFields}
+                                    responseBodyType={ep.responseBodyType}
+                                    responseBodyFields={ep.responseBodyFields}
+                                    statusCodes={ep.statusCodes}
+                                    tags={ep.tags}
+                                    sourceFile={ep.sourceFile}
+                                    sourceLine={ep.sourceLine}
+                                  />
+                                </td>
+                              </tr>
+                            )}
+                          </>
                         ))}
                       </tbody>
                     </table>
