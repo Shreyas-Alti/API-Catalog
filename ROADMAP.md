@@ -326,3 +326,35 @@ Simple filtering is sufficient.
 ---
 
 This roadmap gives you a clean MVP while leaving the parser architecture extensible enough to support many frameworks over time. The only part that grows as you add support is the set of framework-specific parsers; the UI, persistence layer, and catalog remain unchanged.
+
+
+
+
+
+
+
+pg_ctl -D "$env:USERPROFILE\pgdata" -l "$env:USERPROFILE\pgdata\postgres.log" start
+
+
+
+Set-Location "c:\Users\shreyas.bairyks\Desktop\API Catalog\backend"
+.\mvnw.cmd spring-boot:run
+
+
+
+Set-Location "c:\Users\shreyas.bairyks\Desktop\API Catalog\frontend"
+npm run dev
+
+psql -U postgres -d api_catalog
+
+-- list all tables
+\dt
+
+-- see repositories
+SELECT id, name, framework, host_url, created_at FROM repositories;
+
+-- see api endpoints
+SELECT id, method, path, controller, handler FROM api_endpoints LIMIT 20;
+
+-- exit
+\q

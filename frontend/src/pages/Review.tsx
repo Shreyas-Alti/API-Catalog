@@ -10,6 +10,7 @@ const METHOD_COLORS: Record<string, string> = {
 
 export default function Review() {
   const [url, setUrl] = useState('')
+  const [hostUrl, setHostUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -30,7 +31,7 @@ export default function Review() {
     setResult(null)
     setSavedId(null)
     try {
-      const data = await submitRepository(url)
+      const data = await submitRepository(url, hostUrl || null)
       setResult(data)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Unknown error')
@@ -59,7 +60,7 @@ export default function Review() {
     setSaving(true)
     setError(null)
     try {
-      const saved = await saveRepository({ url: result.url, name: result.name, framework: result.framework, apis: editedApis })
+      const saved = await saveRepository({ url: result.url, hostUrl: result.hostUrl, name: result.name, framework: result.framework, apis: editedApis })
       setSavedId(saved.id)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Save failed')
@@ -82,6 +83,11 @@ export default function Review() {
           <input id="url" type="url" className="input" placeholder="https://github.com/owner/repo"
             value={url} onChange={e => setUrl(e.target.value)} required disabled={loading} />
         </div>
+        <div className="form-group">
+          <label htmlFor="hostUrl">API Host URL <span className="optional-label">(optional)</span></label>
+          <input id="hostUrl" type="url" className="input" placeholder="https://api.myapp.com"
+            value={hostUrl} onChange={e => setHostUrl(e.target.value)} disabled={loading} />
+        </div>
         <button type="submit" className="btn btn-primary" disabled={loading || !url}>
           {loading ? 'Cloning & extracting…' : 'Extract APIs'}
         </button>
@@ -97,6 +103,12 @@ export default function Review() {
               <div>
                 <h2>{result.name}</h2>
                 <a href={result.url} target="_blank" rel="noopener noreferrer" className="url-link">{result.url}</a>
+                {result.hostUrl && (
+                  <div className="host-url-row">
+                    <span className="host-label">Host:</span>
+                    <a href={result.hostUrl} target="_blank" rel="noopener noreferrer" className="url-link">{result.hostUrl}</a>
+                  </div>
+                )}
               </div>
               <span className={`badge ${result.supported ? 'badge-green' : 'badge-yellow'}`}>{result.framework}</span>
             </div>
@@ -140,10 +152,10 @@ export default function Review() {
                             <div className="edit-extra-grid">
                               <div className="form-group-sm"><label>Description</label>
                                 <textarea className="input-sm" rows={2} value={buf.description ?? ''} onChange={field('description')} /></div>
-                              <div className="form-group-sm"><label>Request Body</label>
-                                <textarea className="input-sm" rows={2} value={buf.requestBody ?? ''} onChange={field('requestBody')} /></div>
-                              <div className="form-group-sm"><label>Response Body</label>
-                                <textarea className="input-sm" rows={2} value={buf.responseBody ?? ''} onChange={field('responseBody')} /></div>
+                              <div className="form-group-sm"><label>Request Body Type</label>
+                                <textarea className="input-sm" rows={2} value={buf.requestBodyType ?? ''} onChange={field('requestBodyType')} /></div>
+                              <div className="form-group-sm"><label>Response Body Type</label>
+                                <textarea className="input-sm" rows={2} value={buf.responseBodyType ?? ''} onChange={field('responseBodyType')} /></div>
                             </div>
                           </td>
                         </tr>

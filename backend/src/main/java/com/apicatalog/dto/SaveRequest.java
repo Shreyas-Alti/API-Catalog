@@ -10,6 +10,8 @@ public class SaveRequest {
     @NotBlank
     private String url;
 
+    private String hostUrl;
+
     @NotBlank
     private String name;
 
@@ -20,6 +22,9 @@ public class SaveRequest {
 
     public String getUrl() { return url; }
     public void setUrl(String url) { this.url = url; }
+
+    public String getHostUrl() { return hostUrl; }
+    public void setHostUrl(String hostUrl) { this.hostUrl = hostUrl; }
 
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }

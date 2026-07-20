@@ -36,7 +36,7 @@ public class RepositoryService {
             String framework = extractionService.detectFramework(tempDir);
             boolean supported = !"Unsupported".equals(framework);
             List<ExtractedApi> apis = supported ? extractionService.extract(tempDir) : List.of();
-            return new SubmitResponse(repoName, request.getUrl(), framework, supported, apis);
+            return new SubmitResponse(repoName, request.getUrl(), request.getHostUrl(), framework, supported, apis);
         } finally {
             cloneService.cleanup(tempDir);
         }
@@ -48,6 +48,7 @@ public class RepositoryService {
         Repository repo = new Repository();
         repo.setName(request.getName());
         repo.setUrl(request.getUrl());
+        repo.setHostUrl(request.getHostUrl());
         repo.setFramework(request.getFramework());
 
         if (request.getApis() != null) {
@@ -59,10 +60,15 @@ public class RepositoryService {
                 endpoint.setDescription(api.getDescription());
                 endpoint.setController(api.getController());
                 endpoint.setHandler(api.getHandler());
+                endpoint.setTags(api.getTags());
                 endpoint.setParameters(api.getParameters());
-                endpoint.setRequestBody(api.getRequestBody());
-                endpoint.setResponseBody(api.getResponseBody());
+                endpoint.setRequestBodyType(api.getRequestBodyType());
+                endpoint.setRequestBodyFields(api.getRequestBodyFields());
+                endpoint.setResponseBodyType(api.getResponseBodyType());
+                endpoint.setResponseBodyFields(api.getResponseBodyFields());
                 endpoint.setStatusCodes(api.getStatusCodes());
+                endpoint.setSourceFile(api.getSourceFile());
+                endpoint.setSourceLine(api.getSourceLine());
                 repo.getEndpoints().add(endpoint);
             }
         }
@@ -73,7 +79,7 @@ public class RepositoryService {
     public List<RepositorySummaryDto> listAll() {
         return repositoryRepo.findAllWithEndpoints().stream()
                 .map(r -> new RepositorySummaryDto(
-                        r.getId(), r.getName(), r.getUrl(), r.getFramework(),
+                        r.getId(), r.getName(), r.getUrl(), r.getHostUrl(), r.getFramework(),
                         r.getEndpoints().size(), r.getCreatedAt()))
                 .toList();
     }
@@ -97,15 +103,20 @@ public class RepositoryService {
                     dto.setDescription(e.getDescription());
                     dto.setController(e.getController());
                     dto.setHandler(e.getHandler());
+                    dto.setTags(e.getTags());
                     dto.setParameters(e.getParameters());
-                    dto.setRequestBody(e.getRequestBody());
-                    dto.setResponseBody(e.getResponseBody());
+                    dto.setRequestBodyType(e.getRequestBodyType());
+                    dto.setRequestBodyFields(e.getRequestBodyFields());
+                    dto.setResponseBodyType(e.getResponseBodyType());
+                    dto.setResponseBodyFields(e.getResponseBodyFields());
                     dto.setStatusCodes(e.getStatusCodes());
+                    dto.setSourceFile(e.getSourceFile());
+                    dto.setSourceLine(e.getSourceLine());
                     return dto;
                 }).toList();
 
         return new RepositoryDetailDto(repo.getId(), repo.getName(), repo.getUrl(),
-                repo.getFramework(), repo.getCreatedAt(), endpointDtos);
+                repo.getHostUrl(), repo.getFramework(), repo.getCreatedAt(), endpointDtos);
     }
 
     private String extractRepoName(String url) {

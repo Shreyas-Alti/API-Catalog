@@ -11,7 +11,7 @@ function App() {
         <span className="navbar-brand">API Catalog</span>
         <div className="navbar-links">
           <NavLink to="/" end className={({ isActive }) => isActive ? 'active' : ''}>Home</NavLink>
-          <NavLink to="/review" className={({ isActive }) => isActive ? 'active' : ''}>Review</NavLink>
+          <NavLink to="/review" className={({ isActive }) => isActive ? 'active' : ''}>Submit</NavLink>
           <NavLink to="/catalog" className={({ isActive }) => isActive ? 'active' : ''}>Catalog</NavLink>
         </div>
       </nav>

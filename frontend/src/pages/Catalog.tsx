@@ -184,6 +184,11 @@ export default function Catalog() {
                 <div className="repo-card-meta">
                   <a href={repo.url} target="_blank" rel="noopener noreferrer"
                     onClick={e => e.stopPropagation()} className="url-link">{repo.url}</a>
+                  {repo.hostUrl && (
+                    <span className="host-pill" onClick={e => e.stopPropagation()}>
+                      Host: <a href={repo.hostUrl} target="_blank" rel="noopener noreferrer">{repo.hostUrl}</a>
+                    </span>
+                  )}
                   <span className="meta-pill">{repo.endpointCount} endpoint{repo.endpointCount !== 1 ? 's' : ''}</span>
                   <span className="meta-pill">{new Date(repo.createdAt).toLocaleDateString()}</span>
                 </div>

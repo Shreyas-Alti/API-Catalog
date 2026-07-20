@@ -19,6 +19,9 @@ public class Repository {
     @Column(nullable = false)
     private String url;
 
+    @Column(name = "host_url")
+    private String hostUrl;
+
     @Column
     private String framework;
 
@@ -41,6 +44,9 @@ public class Repository {
 
     public String getUrl() { return url; }
     public void setUrl(String url) { this.url = url; }
+
+    public String getHostUrl() { return hostUrl; }
+    public void setHostUrl(String hostUrl) { this.hostUrl = hostUrl; }
 
     public String getFramework() { return framework; }
     public void setFramework(String framework) { this.framework = framework; }
