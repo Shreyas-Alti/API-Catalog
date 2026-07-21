@@ -1,6 +1,13 @@
 import type { ApiParameter, ApiField } from '../api/client'
+import { endpointLabel } from '../utils/humanReadable'
 
 interface Props {
+  // Contextual fields for the title and copy function
+  method?: string
+  path?: string
+  handler?: string | null
+  description?: string | null
+  // Extracted detail fields
   parameters?: ApiParameter[] | null
   requestBodyType?: string | null
   requestBodyFields?: ApiField[] | null
@@ -13,7 +20,7 @@ interface Props {
 }
 
 const LOC_COLORS: Record<string, string> = {
-  PATH: '#6366f1', QUERY: '#f59e0b', BODY: '#22c55e',
+  PATH: '#2563eb', QUERY: '#f59e0b', BODY: '#22c55e',
   HEADER: '#8b5cf6', COOKIE: '#64748b',
 }
 
@@ -37,22 +44,29 @@ function FieldTable({ fields }: { fields: ApiField[] }) {
 }
 
 export function EndpointDetails({
+  method, path, handler, description,
   parameters, requestBodyType, requestBodyFields,
   responseBodyType, responseBodyFields,
   statusCodes, tags, sourceFile, sourceLine,
 }: Props) {
+  const label = endpointLabel({ description, handler, path })
   const hasParams   = parameters && parameters.length > 0
   const hasReqBody  = requestBodyType || (requestBodyFields && requestBodyFields.length > 0)
   const hasRespBody = responseBodyType || (responseBodyFields && responseBodyFields.length > 0)
   const hasCodes    = statusCodes && statusCodes.length > 0
   const hasTags     = tags && tags.length > 0
 
-  if (!hasParams && !hasReqBody && !hasRespBody && !hasCodes && !hasTags && !sourceFile) {
+  if (!label && !hasParams && !hasReqBody && !hasRespBody && !hasCodes && !hasTags && !sourceFile) {
     return <p className="empty-text" style={{ padding: '0.5rem 0' }}>No additional details extracted.</p>
   }
 
   return (
     <div className="endpoint-details">
+      {label && (
+        <div className="details-header">
+          <span className="endpoint-human-title">{label}</span>
+        </div>
+      )}
       {hasParams && (
         <div className="detail-section">
           <div className="detail-section-title">Parameters</div>

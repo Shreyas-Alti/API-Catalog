@@ -110,6 +110,13 @@ export const getRepositories = () =>
 export const getRepository = (id: number) =>
   request<RepositoryDetail>(`/repositories/${id}`)
 
+export const deleteRepository = (id: number) =>
+  fetch(`http://localhost:8080/api/repositories/${id}`, { method: 'DELETE' })
+    .then(res => { if (!res.ok) throw new Error(`Delete failed (${res.status})`) })
+
+export const rescanRepository = (id: number) =>
+  request<RepositoryDetail>(`/repositories/${id}/rescan`, { method: 'POST' })
+
 export interface SearchResultItem {
   endpointId: number
   method: string

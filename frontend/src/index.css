@@ -1,0 +1,7 @@
+html { color-scheme: dark; }
+body {
+  background: #0c0c16;
+  color: #f0f0ff;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

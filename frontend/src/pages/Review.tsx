@@ -3,10 +3,11 @@ import type { FormEvent } from 'react'
 import { submitRepository, saveRepository } from '../api/client'
 import type { SubmitResponse, ExtractedApi } from '../api/client'
 import { EndpointDetails } from '../components/EndpointDetails'
+import { endpointLabel } from '../utils/humanReadable'
 
 const METHODS = ['GET','POST','PUT','DELETE','PATCH']
 const METHOD_COLORS: Record<string, string> = {
-  GET: '#22c55e', POST: '#6366f1', PUT: '#f59e0b', DELETE: '#ef4444', PATCH: '#8b5cf6',
+  GET: '#22c55e', POST: '#2563eb', PUT: '#f59e0b', DELETE: '#ef4444', PATCH: '#8b5cf6',
 }
 
 export default function Review() {
@@ -169,7 +170,12 @@ export default function Review() {
                       <>
                         <tr key={i}>
                           <td><span className="method-badge" style={{ background: METHOD_COLORS[api.method] ?? '#64748b' }}>{api.method}</span></td>
-                          <td className="mono">{api.path}</td>
+                          <td>
+                            <span className="mono">{api.path}</span>
+                            {endpointLabel(api) && (
+                              <div className="endpoint-label">{endpointLabel(api)}</div>
+                            )}
+                          </td>
                           <td>{api.controller ?? '—'}</td>
                           <td>{api.handler ?? '—'}</td>
                           <td className="action-cell">
@@ -185,6 +191,10 @@ export default function Review() {
                           <tr key={`${i}-details`} className="details-row">
                             <td colSpan={5}>
                               <EndpointDetails
+                                method={api.method}
+                                path={api.path}
+                                handler={api.handler}
+                                description={api.description}
                                 parameters={api.parameters}
                                 requestBodyType={api.requestBodyType}
                                 requestBodyFields={api.requestBodyFields}

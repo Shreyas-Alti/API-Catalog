@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import Home from './pages/Home'
 import Review from './pages/Review'
 import Catalog from './pages/Catalog'
+import RepoDetailPage from './pages/RepoDetailPage'
 import './App.css'
 
 function App() {
@@ -21,6 +22,7 @@ function App() {
           <Route path="/" element={<Home />} />
           <Route path="/review" element={<Review />} />
           <Route path="/catalog" element={<Catalog />} />
+          <Route path="/catalog/repo/:id" element={<RepoDetailPage />} />
         </Routes>
       </main>
     </BrowserRouter>
