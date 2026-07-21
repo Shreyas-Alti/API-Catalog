@@ -11,7 +11,7 @@ import java.util.Optional;
 public interface RepositoryRepo extends JpaRepository<Repository, Long> {
 
     @EntityGraph(attributePaths = "endpoints")
-    @Query("SELECT r FROM Repository r")
+    @Query("SELECT r FROM Repository r ORDER BY r.createdAt DESC")
     List<Repository> findAllWithEndpoints();
 
     @EntityGraph(attributePaths = "endpoints")

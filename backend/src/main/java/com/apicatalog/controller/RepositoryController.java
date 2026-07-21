@@ -41,4 +41,17 @@ public class RepositoryController {
     public ResponseEntity<RepositoryDetailDto> getById(@PathVariable Long id) {
         return ResponseEntity.ok(repositoryService.getById(id));
     }
+
+    // Feature 3 – delete a repository and all its endpoints
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+        repositoryService.delete(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    // Feature 4 – re-clone and re-extract a saved repository
+    @PostMapping("/{id}/rescan")
+    public ResponseEntity<RepositoryDetailDto> rescan(@PathVariable Long id) {
+        return ResponseEntity.ok(repositoryService.rescan(id));
+    }
 }

@@ -13,10 +13,10 @@ public interface ApiEndpointRepo extends JpaRepository<ApiEndpoint, Long> {
 
     @Query("""
             SELECT e FROM ApiEndpoint e JOIN FETCH e.repository r WHERE
-            (:repo      IS NULL OR LOWER(r.name)      LIKE LOWER(CONCAT('%', :repo,      '%'))) AND
-            (:framework IS NULL OR LOWER(r.framework)  LIKE LOWER(CONCAT('%', :framework, '%'))) AND
-            (:method    IS NULL OR UPPER(e.method)     = UPPER(:method))                        AND
-            (:path      IS NULL OR LOWER(e.path)       LIKE LOWER(CONCAT('%', :path,      '%')))
+            (CAST(:repo      AS string) IS NULL OR LOWER(r.name)     LIKE LOWER(CONCAT('%', CAST(:repo      AS string), '%'))) AND
+            (CAST(:framework AS string) IS NULL OR LOWER(r.framework) LIKE LOWER(CONCAT('%', CAST(:framework AS string), '%'))) AND
+            (CAST(:method    AS string) IS NULL OR UPPER(e.method)    = UPPER(CAST(:method    AS string)))                      AND
+            (CAST(:path      AS string) IS NULL OR LOWER(e.path)      LIKE LOWER(CONCAT('%', CAST(:path      AS string), '%')))
             ORDER BY r.name, e.method, e.path
             """)
     List<ApiEndpoint> search(@Param("repo") String repo,

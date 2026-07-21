@@ -1,6 +1,6 @@
 package com.apicatalog.parser.fastapi;
 
-import com.apicatalog.model.ExtractedApi;
+import com.apicatalog.model.*;
 import com.apicatalog.parser.ParserPlugin;
 import org.springframework.stereotype.Component;
 
@@ -10,81 +10,188 @@ import java.nio.file.Path;
 import java.util.*;
 import java.util.regex.*;
 
-/**
- * Parser for FastAPI (Python) projects.
- * Matches: @app.get("/path"), @router.post("/path"), etc.
- */
 @Component
 public class FastAPIParser implements ParserPlugin {
 
-    // @app.get("/path") or @router.post("/path", ...)
     private static final Pattern DECORATOR = Pattern.compile(
-            "^@[\\w.]+\\.(get|post|put|delete|patch)\\s*\\(\\s*[\"']([^\"']+)[\"']",
-            Pattern.CASE_INSENSITIVE);
+        "^@[\\w.]+\\.(get|post|put|delete|patch)\\s*\\(([^)]*?)\\)",
+        Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern DEC_PATH = Pattern.compile("[\"']([^\"']+)[\"']");
+    private static final Pattern STATUS_CODE_ARG = Pattern.compile("status_code\\s*=\\s*(\\d+)");
+    private static final Pattern RESPONSE_MODEL = Pattern.compile("response_model\\s*=\\s*(\\w+)");
+    private static final Pattern FUNC_DEF = Pattern.compile("^(?:async\\s+)?def\\s+(\\w+)\\s*\\(");
+    private static final Pattern RETURN_TYPE = Pattern.compile("\\)\\s*->\\s*([\\w\\[\\],\\s|]+?)\\s*:");
+    private static final Pattern PYDANTIC_CLASS = Pattern.compile(
+        "^class\\s+(\\w+)\\s*\\(\\s*(?:BaseModel|pydantic\\.BaseModel|SQLModel|Schema)[^)]*\\)\\s*:");
+    private static final Pattern PY_FIELD = Pattern.compile(
+        "^    (\\w+)\\s*:\\s*([\\w\\[\\],\\s|]+?)(?:\\s*=.*)?$");
 
-    // async def handler_name( or def handler_name(
-    private static final Pattern FUNC_DEF = Pattern.compile(
-            "^(?:async\\s+)?def\\s+(\\w+)\\s*\\(");
+    private static final Set<String> PRIMITIVES = Set.of(
+        "int","str","float","bool","bytes","None","Any","Dict","List","Tuple",
+        "Optional","Union","Type","UUID","datetime","date","time","Decimal",
+        "Response","JSONResponse","StreamingResponse","FileResponse",
+        "HTMLResponse","RedirectResponse","PlainTextResponse","BackgroundTasks",
+        "Request","HTTPException");
+
+    @Override public String getFrameworkName() { return "FastAPI"; }
+    @Override public boolean supports(Path root) { return hasDep(root, "fastapi"); }
 
     @Override
-    public String getFrameworkName() { return "FastAPI"; }
-
-    @Override
-    public boolean supports(Path repositoryRoot) {
-        return containsDependency(repositoryRoot, "fastapi");
-    }
-
-    @Override
-    public List<ExtractedApi> extract(Path repositoryRoot) {
+    public List<ExtractedApi> extract(Path root) {
+        Map<String, Path> modelIndex = buildModelIndex(root);
         List<ExtractedApi> apis = new ArrayList<>();
         try {
-            Files.walk(repositoryRoot)
-                    .filter(p -> p.toString().endsWith(".py"))
-                    .filter(p -> !p.toString().contains("test_") && !p.getFileName().toString().startsWith("test_"))
-                    .forEach(f -> {
-                        try { apis.addAll(parseFile(f)); } catch (IOException ignored) {}
-                    });
+            Files.walk(root)
+                .filter(p -> p.toString().endsWith(".py"))
+                .filter(p -> !p.getFileName().toString().startsWith("test_") && !p.toString().contains("/tests/"))
+                .forEach(f -> { try { apis.addAll(parseFile(f, modelIndex, root)); } catch (IOException ignored) {} });
         } catch (IOException ignored) {}
         return apis;
     }
 
-    private List<ExtractedApi> parseFile(Path file) throws IOException {
-        List<ExtractedApi> apis = new ArrayList<>();
+    private Map<String, Path> buildModelIndex(Path root) {
+        Map<String, Path> idx = new HashMap<>();
+        try {
+            Files.walk(root).filter(p -> p.toString().endsWith(".py")).forEach(f -> {
+                try { for (String line : Files.readAllLines(f)) { Matcher m = PYDANTIC_CLASS.matcher(line); if (m.find()) idx.putIfAbsent(m.group(1), f); } } catch (Exception ignored) {}
+            });
+        } catch (IOException ignored) {}
+        return idx;
+    }
+
+    private List<ExtractedApi> parseFile(Path file, Map<String, Path> modelIndex, Path root) throws IOException {
         String[] lines = Files.readString(file).split("\\r?\\n");
-
+        List<ExtractedApi> apis = new ArrayList<>();
+        String relPath = root.relativize(file).toString().replace(java.io.File.separatorChar, '/');
         for (int i = 0; i < lines.length; i++) {
-            Matcher m = DECORATOR.matcher(lines[i].trim());
-            if (!m.find()) continue;
-
-            String httpMethod = m.group(1).toUpperCase();
-            String path = m.group(2);
-
-            // Find the function definition in the next few lines (skip other decorators)
-            String handlerName = null;
-            for (int j = i + 1; j < Math.min(i + 6, lines.length); j++) {
-                String candidate = lines[j].trim();
-                if (candidate.startsWith("@")) continue;
-                Matcher fm = FUNC_DEF.matcher(candidate);
-                if (fm.find()) { handlerName = fm.group(1); break; }
+            Matcher dm = DECORATOR.matcher(lines[i].trim());
+            if (!dm.find()) continue;
+            String httpMethod = dm.group(1).toUpperCase();
+            String decoratorArgs = dm.group(2);
+            Matcher pathM = DEC_PATH.matcher(decoratorArgs);
+            if (!pathM.find()) continue;
+            String path = pathM.group(1);
+            List<Integer> codes = new ArrayList<>();
+            Matcher scm = STATUS_CODE_ARG.matcher(decoratorArgs);
+            if (scm.find()) { try { codes.add(Integer.parseInt(scm.group(1))); } catch (Exception ignored) {} }
+            String responseModel = null;
+            Matcher rmm = RESPONSE_MODEL.matcher(decoratorArgs);
+            if (rmm.find()) responseModel = rmm.group(1);
+            String handlerName = null; String funcSig = null; int funcLine = -1;
+            for (int j = i + 1; j < Math.min(i + 10, lines.length); j++) {
+                String c = lines[j].trim();
+                if (c.startsWith("@")) continue;
+                Matcher fm = FUNC_DEF.matcher(c);
+                if (fm.find()) { handlerName = fm.group(1); funcSig = collectSig(lines, j); funcLine = j; break; }
             }
-
+            if (handlerName == null) continue;
+            String desc = null;
+            if (funcLine >= 0) {
+                for (int j = funcLine + 1; j < Math.min(funcLine + 4, lines.length); j++) {
+                    String dl = lines[j].trim();
+                    if (dl.startsWith("\"\"\"")) { String ds = dl.replace("\"\"\"", "").trim(); if (!ds.isEmpty()) desc = ds; break; }
+                    if (!dl.isEmpty()) break;
+                }
+            }
+            String returnType = responseModel;
+            if (returnType == null && funcSig != null) {
+                Matcher rtm = RETURN_TYPE.matcher(funcSig);
+                if (rtm.find()) { String rt = rtm.group(1).trim(); Matcher om = Pattern.compile("(?:Optional|List|Set)\\[([\\w]+)\\]").matcher(rt); if (om.find()) rt = om.group(1); if (!PRIMITIVES.contains(rt) && !rt.equals("None")) returnType = rt; }
+            }
+            List<ApiParameter> params = funcSig != null ? parsePyParams(funcSig, path, modelIndex) : List.of();
+            String reqBodyType = null; List<ApiField> reqBodyFields = List.of();
+            for (ApiParameter p : params) { if ("BODY".equals(p.getLocation())) { reqBodyType = p.getType(); reqBodyFields = resolveModel(reqBodyType, modelIndex); break; } }
+            List<ApiField> respFields = resolveModel(returnType, modelIndex);
             ExtractedApi api = new ExtractedApi();
-            api.setMethod(httpMethod);
-            api.setPath(path);
-            api.setHandler(handlerName);
+            api.setMethod(httpMethod); api.setPath(path); api.setHandler(handlerName); api.setDescription(desc);
+            api.setParameters(params.isEmpty() ? null : params);
+            api.setRequestBodyType(reqBodyType); api.setRequestBodyFields(reqBodyFields.isEmpty() ? null : reqBodyFields);
+            api.setResponseBodyType(returnType); api.setResponseBodyFields(respFields.isEmpty() ? null : respFields);
+            api.setStatusCodes(codes.isEmpty() ? null : codes);
+            api.setSourceFile(relPath); api.setSourceLine(i + 1);
             apis.add(api);
         }
         return apis;
     }
 
-    private boolean containsDependency(Path repositoryRoot, String dep) {
-        for (String file : List.of("requirements.txt", "pyproject.toml", "Pipfile", "setup.py")) {
-            Path candidate = repositoryRoot.resolve(file);
-            if (Files.exists(candidate)) {
-                try {
-                    if (Files.readString(candidate).toLowerCase().contains(dep)) return true;
-                } catch (IOException ignored) {}
+    private String collectSig(String[] lines, int start) {
+        StringBuilder sb = new StringBuilder(); int d = 0; boolean open = false;
+        for (int i = start; i < Math.min(start + 20, lines.length); i++) {
+            String l = lines[i].trim(); sb.append(" ").append(l);
+            for (char c : l.toCharArray()) { if (c == '(') { open = true; d++; } else if (c == ')') { d--; if (open && d == 0) return sb.toString().trim(); } }
+        }
+        return sb.toString().trim();
+    }
+
+    private List<ApiParameter> parsePyParams(String sig, String urlPath, Map<String, Path> modelIndex) {
+        int s = sig.indexOf('('); if (s < 0) return List.of();
+        int d = 0, end = -1;
+        for (int i = s; i < sig.length(); i++) { char c = sig.charAt(i); if (c == '(') d++; else if (c == ')') { d--; if (d == 0) { end = i; break; } } }
+        if (end < 0) return List.of();
+        Set<String> pathParams = new HashSet<>();
+        Matcher um = Pattern.compile("\\{([^}]+)\\}").matcher(urlPath);
+        while (um.find()) pathParams.add(um.group(1));
+        List<ApiParameter> result = new ArrayList<>();
+        for (String raw : splitComma(sig.substring(s + 1, end))) {
+            raw = raw.trim();
+            if (raw.isEmpty() || raw.equals("self") || raw.equals("*") || raw.startsWith("**")) continue;
+            Matcher pm = Pattern.compile("^(\\w+)\\s*:\\s*([^=]+?)(?:\\s*=\\s*(.+))?$").matcher(raw);
+            if (!pm.find()) continue;
+            String name = pm.group(1); String typeAnn = pm.group(2).trim(); String defVal = pm.group(3) != null ? pm.group(3).trim() : null;
+            if (name.equals("db") || name.equals("session") || name.equals("background_tasks")) continue;
+            String cleanType = typeAnn;
+            Matcher optm = Pattern.compile("Optional\\[([^\\]]+)\\]").matcher(typeAnn);
+            if (optm.find()) cleanType = optm.group(1).trim();
+            boolean required = !typeAnn.contains("Optional") && defVal == null;
+            String loc;
+            if (defVal != null && defVal.startsWith("Header(")) loc = "HEADER";
+            else if (defVal != null && defVal.startsWith("Body(")) loc = "BODY";
+            else if (pathParams.contains(name)) loc = "PATH";
+            else if (!PRIMITIVES.contains(cleanType) && modelIndex.containsKey(cleanType)) loc = "BODY";
+            else if (isPrimitive(cleanType)) loc = "QUERY";
+            else continue;
+            ApiParameter p = new ApiParameter(); p.setName(name); p.setType(cleanType); p.setLocation(loc); p.setRequired(required); result.add(p);
+        }
+        return result;
+    }
+
+    private boolean isPrimitive(String t) { return PRIMITIVES.contains(t) || t.startsWith("List[") || t.startsWith("Optional[") || t.startsWith("Dict["); }
+
+    private List<ApiField> resolveModel(String name, Map<String, Path> modelIndex) {
+        if (name == null || name.isBlank() || PRIMITIVES.contains(name)) return List.of();
+        Path f = modelIndex.get(name); if (f == null) return List.of();
+        List<ApiField> fields = new ArrayList<>();
+        try {
+            String[] lines = Files.readString(f).split("\\r?\\n");
+            boolean inClass = false;
+            for (String rawLine : lines) {
+                String t = rawLine.trim();
+                if (t.startsWith("class " + name + "(")) { inClass = true; continue; }
+                if (inClass) {
+                    if (!t.isEmpty() && !rawLine.startsWith("    ") && !rawLine.startsWith("\t") && !t.startsWith("#")) { inClass = false; continue; }
+                    if (t.startsWith("@") || t.startsWith("#") || t.startsWith("def ") || t.startsWith("class ")) continue;
+                    Matcher fm = PY_FIELD.matcher(rawLine);
+                    if (fm.find()) { String type = fm.group(2).trim(); Matcher om = Pattern.compile("Optional\\[([^\\]]+)\\]").matcher(type); if (om.find()) type = om.group(1).trim(); ApiField field = new ApiField(); field.setName(fm.group(1)); field.setType(type); fields.add(field); }
+                }
             }
+        } catch (Exception ignored) {}
+        return fields;
+    }
+
+    private List<String> splitComma(String s) {
+        List<String> r = new ArrayList<>(); int d = 0; StringBuilder cur = new StringBuilder();
+        for (char c : s.toCharArray()) {
+            if (c == '[' || c == '(' || c == '{') d++; else if (c == ']' || c == ')' || c == '}') d--;
+            else if (c == ',' && d == 0) { if (!cur.toString().isBlank()) r.add(cur.toString()); cur = new StringBuilder(); continue; }
+            cur.append(c);
+        }
+        if (!cur.toString().isBlank()) r.add(cur.toString());
+        return r;
+    }
+
+    private boolean hasDep(Path root, String dep) {
+        for (String f : List.of("requirements.txt", "pyproject.toml", "Pipfile", "setup.py")) {
+            Path c = root.resolve(f); if (Files.exists(c)) { try { if (Files.readString(c).toLowerCase().contains(dep)) return true; } catch (IOException ignored) {} }
         }
         return false;
     }

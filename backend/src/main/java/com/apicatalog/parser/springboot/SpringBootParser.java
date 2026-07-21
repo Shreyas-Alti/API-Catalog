@@ -126,23 +126,26 @@ public class SpringBootParser implements ParserPlugin {
             if (t.isEmpty() || t.startsWith("//") || t.startsWith("*")) continue;
             if (t.startsWith("@")) { pending.add(t); continue; }
             if (!pending.isEmpty()) {
-                String httpMethod = null, annPath = "";
+                String httpMethod = null, matchedAnn = null;
                 for (String ann : pending) {
                     Matcher hm = HTTP_MAPPING.matcher(ann);
                     if (hm.find()) {
                         httpMethod = hm.group(1).toUpperCase();
-                        annPath = hm.group(2) != null ? hm.group(2) : "";
+                        matchedAnn = ann;
                         break;
                     }
                     Matcher rm = REQUEST_MAPPING_METHOD.matcher(ann);
                     if (rm.find()) httpMethod = rm.group(1).toUpperCase();
                 }
                 if (httpMethod != null) {
+                    List<String> annPaths = extractAnnPaths(matchedAnn);
                     String sig = collectSig(lines, i);
                     if (sig != null) {
-                        ExtractedApi api = buildApi(httpMethod, annPath, sig, pending,
-                            cls, basePath, clsTags, relPath, i + 1, idx);
-                        if (api != null) apis.add(api);
+                        for (String ap : annPaths) {
+                            ExtractedApi api = buildApi(httpMethod, ap, sig, pending,
+                                cls, basePath, clsTags, relPath, i + 1, idx);
+                            if (api != null) apis.add(api);
+                        }
                     }
                 }
             }
@@ -341,6 +344,25 @@ public class SpringBootParser implements ParserPlugin {
         }
         if (!cur.toString().isBlank()) r.add(cur.toString());
         return r;
+    }
+
+    /** Extracts one or more paths from an HTTP mapping annotation.
+     *  Handles both single: @GetMapping("/a") and array: @GetMapping({"/a", "/b"}) forms.
+     */
+    private List<String> extractAnnPaths(String ann) {
+        if (ann == null) return List.of("");
+        // Array notation: @GetMapping({"/a", "/b"}) or value = {"/a", "/b"}
+        Matcher arrayM = Pattern.compile("\\{([^}]+)\\}").matcher(ann);
+        if (arrayM.find()) {
+            List<String> paths = new ArrayList<>();
+            Matcher qm = Pattern.compile("[\"']([^\"']+)[\"']").matcher(arrayM.group(1));
+            while (qm.find()) paths.add(qm.group(1));
+            return paths.isEmpty() ? List.of("") : paths;
+        }
+        // Single path
+        Matcher sm = Pattern.compile("[\"']([^\"']*)[\"']").matcher(ann);
+        if (sm.find()) return List.of(sm.group(1));
+        return List.of(""); // @GetMapping with no path
     }
 
     private String joinPaths(String base, String path) {

@@ -50,30 +50,33 @@ public class RepositoryService {
         repo.setUrl(request.getUrl());
         repo.setHostUrl(request.getHostUrl());
         repo.setFramework(request.getFramework());
-
-        if (request.getApis() != null) {
-            for (ExtractedApi api : request.getApis()) {
-                ApiEndpoint endpoint = new ApiEndpoint();
-                endpoint.setRepository(repo);
-                endpoint.setMethod(api.getMethod());
-                endpoint.setPath(api.getPath());
-                endpoint.setDescription(api.getDescription());
-                endpoint.setController(api.getController());
-                endpoint.setHandler(api.getHandler());
-                endpoint.setTags(api.getTags());
-                endpoint.setParameters(api.getParameters());
-                endpoint.setRequestBodyType(api.getRequestBodyType());
-                endpoint.setRequestBodyFields(api.getRequestBodyFields());
-                endpoint.setResponseBodyType(api.getResponseBodyType());
-                endpoint.setResponseBodyFields(api.getResponseBodyFields());
-                endpoint.setStatusCodes(api.getStatusCodes());
-                endpoint.setSourceFile(api.getSourceFile());
-                endpoint.setSourceLine(api.getSourceLine());
-                repo.getEndpoints().add(endpoint);
-            }
-        }
-
+        populateEndpoints(repo, request.getApis());
         return toDetailDto(repositoryRepo.save(repo));
+    }
+
+    public void delete(Long id) {
+        if (!repositoryRepo.existsById(id)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Repository not found: " + id);
+        }
+        repositoryRepo.deleteById(id);
+    }
+
+    public RepositoryDetailDto rescan(Long id) {
+        Repository repo = repositoryRepo.findByIdWithEndpoints(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Repository not found: " + id));
+        Path tempDir = null;
+        try {
+            tempDir = cloneService.clone(repo.getUrl());
+            String framework = extractionService.detectFramework(tempDir);
+            boolean supported = !"Unsupported".equals(framework);
+            List<ExtractedApi> apis = supported ? extractionService.extract(tempDir) : List.of();
+            repo.setFramework(framework);
+            populateEndpoints(repo, apis);
+            return toDetailDto(repositoryRepo.save(repo));
+        } finally {
+            cloneService.cleanup(tempDir);
+        }
     }
 
     public List<RepositorySummaryDto> listAll() {
@@ -92,6 +95,30 @@ public class RepositoryService {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private void populateEndpoints(Repository repo, List<ExtractedApi> apis) {
+        repo.getEndpoints().clear();
+        if (apis == null) return;
+        for (ExtractedApi api : apis) {
+            ApiEndpoint endpoint = new ApiEndpoint();
+            endpoint.setRepository(repo);
+            endpoint.setMethod(api.getMethod());
+            endpoint.setPath(api.getPath());
+            endpoint.setDescription(api.getDescription());
+            endpoint.setController(api.getController());
+            endpoint.setHandler(api.getHandler());
+            endpoint.setTags(api.getTags());
+            endpoint.setParameters(api.getParameters());
+            endpoint.setRequestBodyType(api.getRequestBodyType());
+            endpoint.setRequestBodyFields(api.getRequestBodyFields());
+            endpoint.setResponseBodyType(api.getResponseBodyType());
+            endpoint.setResponseBodyFields(api.getResponseBodyFields());
+            endpoint.setStatusCodes(api.getStatusCodes());
+            endpoint.setSourceFile(api.getSourceFile());
+            endpoint.setSourceLine(api.getSourceLine());
+            repo.getEndpoints().add(endpoint);
+        }
+    }
 
     private RepositoryDetailDto toDetailDto(Repository repo) {
         List<EndpointDto> endpointDtos = repo.getEndpoints().stream()
