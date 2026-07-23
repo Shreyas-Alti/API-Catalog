@@ -1,10 +1,12 @@
 package com.apicatalog.controller;
 
 import com.apicatalog.config.LlmProperties;
+import com.apicatalog.dto.EndpointPatchRequest;
 import com.apicatalog.model.ApiEndpoint;
 import com.apicatalog.model.ExtractedApi;
 import com.apicatalog.model.Repository;
 import com.apicatalog.repository.ApiEndpointRepo;
+import com.apicatalog.repository.RepositoryRepo;
 import com.apicatalog.service.CloneService;
 import com.apicatalog.service.EndpointEnrichmentService;
 import org.springframework.http.HttpStatus;
@@ -21,19 +23,54 @@ import java.util.List;
 @RequestMapping("/api/endpoints")
 public class EndpointController {
 
-    private final ApiEndpointRepo        endpointRepo;
+    private final ApiEndpointRepo         endpointRepo;
+    private final RepositoryRepo           repositoryRepo;
     private final EndpointEnrichmentService enrichmentService;
-    private final CloneService           cloneService;
-    private final LlmProperties          llmProperties;
+    private final CloneService            cloneService;
+    private final LlmProperties           llmProperties;
 
     public EndpointController(ApiEndpointRepo endpointRepo,
+                              RepositoryRepo repositoryRepo,
                               EndpointEnrichmentService enrichmentService,
                               CloneService cloneService,
                               LlmProperties llmProperties) {
         this.endpointRepo       = endpointRepo;
+        this.repositoryRepo     = repositoryRepo;
         this.enrichmentService  = enrichmentService;
         this.cloneService       = cloneService;
         this.llmProperties      = llmProperties;
+    }
+
+    /**
+     * PATCH /api/endpoints/{id}
+     *
+     * Hand-edits a single persisted endpoint (description, summary, tags, body types).
+     * Null fields are ignored. Sets manuallyEdited=true, needsReview=false,
+     * and marks the parent repository's OpenAPI cache as dirty.
+     */
+    @PatchMapping("/{id}")
+    public ResponseEntity<Void> patch(@PathVariable Long id,
+                                      @RequestBody EndpointPatchRequest req) {
+        ApiEndpoint ep = endpointRepo.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Endpoint not found: " + id));
+
+        if (req.getDescription()    != null) ep.setDescription(req.getDescription());
+        if (req.getSummary()        != null) ep.setSummary(req.getSummary());
+        if (req.getTags()           != null) ep.setTags(req.getTags());
+        if (req.getRequestBodyType()  != null) ep.setRequestBodyType(req.getRequestBodyType());
+        if (req.getResponseBodyType() != null) ep.setResponseBodyType(req.getResponseBodyType());
+
+        ep.setManuallyEdited(true);
+        ep.setNeedsReview(false);
+
+        // Mark OpenAPI cache stale so the next /openapi.json call regenerates
+        Repository repo = ep.getRepository();
+        repo.setOpenapiDirty(true);
+        repositoryRepo.save(repo);
+
+        endpointRepo.save(ep);
+        return ResponseEntity.noContent().build();
     }
 
     /**

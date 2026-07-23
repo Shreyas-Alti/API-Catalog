@@ -140,6 +140,21 @@ export const regenerateEndpoint = (id: number, force = false) =>
   fetch(`${BASE_URL}/endpoints/${id}/regenerate?force=${force}`, { method: 'POST' })
     .then(res => { if (!res.ok && res.status !== 204) throw new Error(`Regenerate failed (${res.status})`) })
 
+export interface EndpointPatch {
+  description?: string
+  summary?: string
+  tags?: string[]
+  requestBodyType?: string
+  responseBodyType?: string
+}
+
+export const patchEndpoint = (id: number, patch: EndpointPatch) =>
+  fetch(`${BASE_URL}/endpoints/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  }).then(res => { if (!res.ok) throw new Error(`Patch failed (${res.status})`) })
+
 export interface SearchResultItem {
   endpointId: number
   method: string
