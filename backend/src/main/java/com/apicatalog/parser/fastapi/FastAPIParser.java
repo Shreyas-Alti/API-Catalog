@@ -16,6 +16,10 @@ public class FastAPIParser implements ParserPlugin {
     private static final Pattern DECORATOR = Pattern.compile(
         "^@[\\w.]+\\.(get|post|put|delete|patch)\\s*\\(([^)]*?)\\)",
         Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    // Fast pre-check: line opens an HTTP-method decorator — may or may not close on the same line
+    private static final Pattern DEC_START = Pattern.compile(
+        "^@[\\w.]+\\.(get|post|put|delete|patch)\\s*\\(",
+        Pattern.CASE_INSENSITIVE);
     private static final Pattern DEC_PATH = Pattern.compile("[\"']([^\"']+)[\"']");
     private static final Pattern STATUS_CODE_ARG = Pattern.compile("status_code\\s*=\\s*(\\d+)");
     private static final Pattern RESPONSE_MODEL = Pattern.compile("response_model\\s*=\\s*(\\w+)");
@@ -64,7 +68,11 @@ public class FastAPIParser implements ParserPlugin {
         List<ExtractedApi> apis = new ArrayList<>();
         String relPath = root.relativize(file).toString().replace(java.io.File.separatorChar, '/');
         for (int i = 0; i < lines.length; i++) {
-            Matcher dm = DECORATOR.matcher(lines[i].trim());
+            // Quick pre-check on the raw line before doing heavier work
+            if (!DEC_START.matcher(lines[i].trim()).find()) continue;
+            // Collect the full decorator — it may span multiple lines until parens balance
+            String decoratorText = collectDecorator(lines, i);
+            Matcher dm = DECORATOR.matcher(decoratorText);
             if (!dm.find()) continue;
             String httpMethod = dm.group(1).toUpperCase();
             String decoratorArgs = dm.group(2);
@@ -112,6 +120,33 @@ public class FastAPIParser implements ParserPlugin {
             apis.add(api);
         }
         return apis;
+    }
+
+    /**
+     * Joins lines starting at {@code start} until the outermost parentheses opened
+     * on the first line are closed.  Handles decorators like:
+     * <pre>
+     *   @router.get(
+     *       "/users/{id}",
+     *       response_model=UserOut,
+     *   )
+     * </pre>
+     * Returns a single space-joined string safe for DECORATOR to match against.
+     */
+    private String collectDecorator(String[] lines, int start) {
+        StringBuilder sb = new StringBuilder();
+        int depth = 0;
+        boolean opened = false;
+        for (int i = start; i < Math.min(start + 15, lines.length); i++) {
+            String l = lines[i].trim();
+            if (i > start) sb.append(' ');
+            sb.append(l);
+            for (char c : l.toCharArray()) {
+                if (c == '(') { opened = true; depth++; }
+                else if (c == ')') { depth--; if (opened && depth == 0) return sb.toString(); }
+            }
+        }
+        return sb.toString();
     }
 
     private String collectSig(String[] lines, int start) {

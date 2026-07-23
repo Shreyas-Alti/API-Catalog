@@ -141,6 +141,8 @@ export const regenerateEndpoint = (id: number, force = false) =>
     .then(res => { if (!res.ok && res.status !== 204) throw new Error(`Regenerate failed (${res.status})`) })
 
 export interface EndpointPatch {
+  method?: string
+  path?: string
   description?: string
   summary?: string
   tags?: string[]

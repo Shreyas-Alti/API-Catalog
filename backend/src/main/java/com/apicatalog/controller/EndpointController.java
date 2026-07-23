@@ -55,9 +55,11 @@ public class EndpointController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "Endpoint not found: " + id));
 
-        if (req.getDescription()    != null) ep.setDescription(req.getDescription());
-        if (req.getSummary()        != null) ep.setSummary(req.getSummary());
-        if (req.getTags()           != null) ep.setTags(req.getTags());
+        if (req.getMethod()          != null) ep.setMethod(req.getMethod().toUpperCase());
+        if (req.getPath()            != null) ep.setPath(req.getPath());
+        if (req.getDescription()     != null) ep.setDescription(req.getDescription());
+        if (req.getSummary()         != null) ep.setSummary(req.getSummary());
+        if (req.getTags()            != null) ep.setTags(req.getTags());
         if (req.getRequestBodyType()  != null) ep.setRequestBodyType(req.getRequestBodyType());
         if (req.getResponseBodyType() != null) ep.setResponseBodyType(req.getResponseBodyType());
 
