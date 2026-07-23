@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import org.springframework.stereotype.Component;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -17,7 +16,6 @@ import java.time.Duration;
  * Anthropic Messages API client using java.net.http (no extra Maven dependency).
  * Uses Jackson (already on the classpath via Spring Boot) for serialization.
  */
-@Component
 public class AnthropicClient implements LlmClient {
 
     private static final String ANTHROPIC_VERSION = "2023-06-01";

@@ -32,6 +32,8 @@ logging:
 
 llm:
   enabled: false
-  api-key: ${ANTHROPIC_API_KEY:}
-  model: claude-sonnet-4-6
-  base-url: https://api.anthropic.com
+  # Switch to "anthropic" and set ANTHROPIC_API_KEY to use Claude instead
+  provider: gemini
+  api-key: ${GEMINI_API_KEY:}
+  model: gemini-2.0-flash
+  base-url: https://generativelanguage.googleapis.com
