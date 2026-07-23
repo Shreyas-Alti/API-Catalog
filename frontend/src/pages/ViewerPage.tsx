@@ -1,40 +1,60 @@
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ApiReferenceReact } from '@scalar/api-reference-react'
 import '@scalar/api-reference-react/style.css'
+import { getRepository } from '../api/client'
 
 const BACKEND = 'http://localhost:8080'
 
 export default function ViewerPage() {
   const { id }   = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const [repoName, setRepoName] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!id) return
+    getRepository(Number(id))
+      .then(r => setRepoName(r.name))
+      .catch(() => setRepoName(null))
+  }, [id])
 
   if (!id) return null
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 58px)' }}>
-      {/* Thin breadcrumb bar */}
+    /* Fixed so it escapes the .main-content max-width:960px wrapper */
+    <div style={{
+      position: 'fixed', top: '52px', left: 0, right: 0, bottom: 0,
+      display: 'flex', flexDirection: 'column', zIndex: 10,
+    }}>
+      {/* Breadcrumb bar — dark to match app theme */}
       <div style={{
-        display: 'flex', alignItems: 'center', gap: '0.75rem',
-        padding: '0.45rem 1.25rem', background: '#f8fafc',
-        borderBottom: '1px solid #e2e8f0', flexShrink: 0,
+        display: 'flex', alignItems: 'center', gap: '0.75rem', flexShrink: 0,
+        padding: '0.45rem 1.25rem',
+        background: 'rgba(8,8,18,0.97)',
+        borderBottom: '1px solid rgba(255,255,255,0.08)',
       }}>
         <button
           onClick={() => navigate('/catalog')}
           style={{
-            border: '1.5px solid #e2e8f0', background: '#fff', borderRadius: '6px',
-            padding: '0.2rem 0.7rem', fontSize: '0.8rem', cursor: 'pointer', color: '#475569',
+            border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.05)',
+            borderRadius: '6px', padding: '0.2rem 0.7rem', fontSize: '0.8rem',
+            cursor: 'pointer', color: '#94a3b8',
           }}>
           ← Catalog
         </button>
-        <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>Repository #{id}</span>
+        <span style={{ fontSize: '0.82rem', color: '#64748b' }}>
+          {repoName ?? `Repository #${id}`}
+        </span>
       </div>
 
-      {/* Scalar fills remaining height */}
-      <div style={{ flex: 1, overflow: 'hidden' }}>
+      {/* Scalar fills remaining height — dark mode matches app */}
+      <div style={{ flex: 1, overflow: 'auto' }}>
         <ApiReferenceReact
           configuration={{
             url: `${BACKEND}/api/repositories/${id}/openapi.json`,
+            darkMode: true,
             hideDownloadButton: false,
+            showSidebar: true,
             customCss: `
               :root {
                 --scalar-color-accent: #2563eb;
