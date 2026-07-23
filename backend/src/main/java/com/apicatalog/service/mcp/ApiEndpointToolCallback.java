@@ -3,8 +3,6 @@ package com.apicatalog.service.mcp;
 import com.apicatalog.model.ApiEndpoint;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.ai.tool.ToolCallback;
-import org.springframework.ai.tool.definition.ToolDefinition;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -15,10 +13,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Wraps one ApiEndpoint as a Spring AI ToolCallback.
- * When invoked, performs the actual HTTP call against the repository's hostUrl.
+ * Encapsulates one ApiEndpoint as an MCP tool definition + HTTP proxy call.
+ *
+ * NOTE: Spring AI ToolCallback/ToolDefinition interfaces are commented out
+ * pending Spring AI MCP dependency resolution for Spring Boot 4.x.
+ * The tool name, schema generation, and HTTP proxy logic are complete.
  */
-public class ApiEndpointToolCallback implements ToolCallback {
+public class ApiEndpointToolCallback {
 
     private final String       toolName;
     private final ApiEndpoint  endpoint;
@@ -35,22 +36,19 @@ public class ApiEndpointToolCallback implements ToolCallback {
         this.mapper   = mapper;
     }
 
-    @Override
-    public ToolDefinition getToolDefinition() {
-        return ToolDefinition.builder()
-                .name(toolName)
-                .description(describe())
-                .inputSchema(buildInputSchema())
-                .build();
+    public String getToolName() { return toolName; }
+
+    public String describe() {
+        if (endpoint.getSummary()     != null) return endpoint.getSummary();
+        if (endpoint.getDescription() != null) return endpoint.getDescription();
+        return endpoint.getMethod() + " " + endpoint.getPath();
     }
 
-    @Override
     public String call(String toolInput) {
         try {
             JsonNode args = mapper.readTree(toolInput);
             String path = endpoint.getPath();
 
-            // Substitute PATH parameters
             if (endpoint.getParameters() != null) {
                 for (var p : endpoint.getParameters()) {
                     if ("PATH".equals(p.getLocation()) && args.has(p.getName())) {
@@ -60,7 +58,6 @@ public class ApiEndpointToolCallback implements ToolCallback {
                 }
             }
 
-            // Build URL with QUERY parameters
             StringBuilder url = new StringBuilder(baseUrl).append(path);
             boolean first = true;
             if (endpoint.getParameters() != null) {
@@ -96,13 +93,7 @@ public class ApiEndpointToolCallback implements ToolCallback {
         }
     }
 
-    private String describe() {
-        if (endpoint.getSummary()     != null) return endpoint.getSummary();
-        if (endpoint.getDescription() != null) return endpoint.getDescription();
-        return endpoint.getMethod() + " " + endpoint.getPath();
-    }
-
-    private String buildInputSchema() {
+    public String buildInputSchema() {
         StringBuilder props = new StringBuilder();
         List<String> required = new ArrayList<>();
 

@@ -7,9 +7,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Rebuilds MCP tool registrations on every startup.
- * McpSyncServer holds tools in memory only, so they must be re-registered
- * after each restart.
+ * Calls McpToolRegistrationService on startup.
+ * Currently a no-op (stub) — full MCP registration will activate once
+ * Spring AI MCP server dependency is resolved for Spring Boot 4.x.
  */
 @Configuration
 public class McpStartupConfig {
