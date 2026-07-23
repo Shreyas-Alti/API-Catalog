@@ -1,8 +1,10 @@
 package com.apicatalog.model;
 
 import java.util.List;
+import java.util.Map;
 
 public class ExtractedApi {
+    // ── Parser-extracted (facts) ──────────────────────────────
     private String method;
     private String path;
     private String controller;
@@ -17,6 +19,15 @@ public class ExtractedApi {
     private List<Integer> statusCodes;
     private String sourceFile;
     private Integer sourceLine;
+
+    // ── AI-enriched (written by LLM, editable in Review UI) ──
+    private String summary;
+    private Map<String, Object> requestExample;
+    private Map<String, Object> responseExample;
+    private boolean aiGenerated;
+    private boolean needsReview;
+    private String llmModel;
+    private boolean manuallyEdited;
 
     public String getMethod() { return method; }
     public void setMethod(String method) { this.method = method; }
@@ -46,4 +57,19 @@ public class ExtractedApi {
     public void setSourceFile(String sourceFile) { this.sourceFile = sourceFile; }
     public Integer getSourceLine() { return sourceLine; }
     public void setSourceLine(Integer sourceLine) { this.sourceLine = sourceLine; }
+
+    public String getSummary() { return summary; }
+    public void setSummary(String summary) { this.summary = summary; }
+    public Map<String, Object> getRequestExample() { return requestExample; }
+    public void setRequestExample(Map<String, Object> requestExample) { this.requestExample = requestExample; }
+    public Map<String, Object> getResponseExample() { return responseExample; }
+    public void setResponseExample(Map<String, Object> responseExample) { this.responseExample = responseExample; }
+    public boolean isAiGenerated() { return aiGenerated; }
+    public void setAiGenerated(boolean aiGenerated) { this.aiGenerated = aiGenerated; }
+    public boolean isNeedsReview() { return needsReview; }
+    public void setNeedsReview(boolean needsReview) { this.needsReview = needsReview; }
+    public String getLlmModel() { return llmModel; }
+    public void setLlmModel(String llmModel) { this.llmModel = llmModel; }
+    public boolean isManuallyEdited() { return manuallyEdited; }
+    public void setManuallyEdited(boolean manuallyEdited) { this.manuallyEdited = manuallyEdited; }
 }

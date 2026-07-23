@@ -10,6 +10,7 @@ public class ApiField {
     private String name;
     private String type;
     private List<String> validations;
+    private String description;
 
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
@@ -19,4 +20,7 @@ public class ApiField {
 
     public List<String> getValidations() { return validations; }
     public void setValidations(List<String> validations) { this.validations = validations; }
+
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
 }

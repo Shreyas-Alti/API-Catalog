@@ -2,8 +2,6 @@ import { useState, useEffect } from 'react'
 import type { FormEvent } from 'react'
 import { submitRepository, saveRepository } from '../api/client'
 import type { SubmitResponse, ExtractedApi } from '../api/client'
-import { EndpointDetails } from '../components/EndpointDetails'
-import { endpointLabel } from '../utils/humanReadable'
 
 const METHODS = ['GET','POST','PUT','DELETE','PATCH']
 const METHOD_COLORS: Record<string, string> = {
@@ -18,13 +16,10 @@ export default function Review() {
   const [error, setError] = useState<string | null>(null)
   const [savedId, setSavedId] = useState<number | null>(null)
   const [result, setResult] = useState<SubmitResponse | null>(null)
+  const [commitSha, setCommitSha] = useState<string | null>(null)
   const [editedApis, setEditedApis] = useState<ExtractedApi[]>([])
   const [editingIdx, setEditingIdx] = useState<number | null>(null)
   const [buf, setBuf] = useState<ExtractedApi | null>(null)
-  const [openDetails, setOpenDetails] = useState<Set<number>>(new Set())
-
-  const toggleDetails = (i: number) =>
-    setOpenDetails(prev => { const s = new Set(prev); s.has(i) ? s.delete(i) : s.add(i); return s })
 
   useEffect(() => {
     if (result) setEditedApis(result.apis.map(a => ({ ...a })))
@@ -39,6 +34,7 @@ export default function Review() {
     try {
       const data = await submitRepository(url, hostUrl || null)
       setResult(data)
+      setCommitSha(data.commitSha ?? null)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
@@ -66,7 +62,7 @@ export default function Review() {
     setSaving(true)
     setError(null)
     try {
-      const saved = await saveRepository({ url: result.url, hostUrl: result.hostUrl, name: result.name, framework: result.framework, apis: editedApis })
+      const saved = await saveRepository({ url: result.url, hostUrl: result.hostUrl, name: result.name, framework: result.framework, apis: editedApis, commitSha })
       setSavedId(saved.id)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Save failed')
@@ -155,13 +151,42 @@ export default function Review() {
                         </tr>
                         <tr key={`${i}-extra`} className="editing-extra">
                           <td colSpan={5}>
-                            <div className="edit-extra-grid">
-                              <div className="form-group-sm"><label>Description</label>
-                                <textarea className="input-sm" rows={2} value={buf.description ?? ''} onChange={field('description')} /></div>
-                              <div className="form-group-sm"><label>Request Body Type</label>
-                                <textarea className="input-sm" rows={2} value={buf.requestBodyType ?? ''} onChange={field('requestBodyType')} /></div>
-                              <div className="form-group-sm"><label>Response Body Type</label>
-                                <textarea className="input-sm" rows={2} value={buf.responseBodyType ?? ''} onChange={field('responseBodyType')} /></div>
+                            {/* ── From Source ────────────────────────── */}
+                            <div className="edit-section edit-section--source">
+                              <div className="edit-section-title">📦 From Source Code</div>
+                              <div className="edit-extra-grid">
+                                <div className="form-group-sm"><label>Description</label>
+                                  <textarea className="input-sm" rows={2} value={buf.description ?? ''} onChange={field('description')} /></div>
+                                <div className="form-group-sm"><label>Request Body Type</label>
+                                  <input className="input-sm" value={buf.requestBodyType ?? ''} onChange={field('requestBodyType')} /></div>
+                                <div className="form-group-sm"><label>Response Body Type</label>
+                                  <input className="input-sm" value={buf.responseBodyType ?? ''} onChange={field('responseBodyType')} /></div>
+                              </div>
+                            </div>
+                            {/* ── AI-Generated ────────────────────────── */}
+                            <div className="edit-section edit-section--ai">
+                              <div className="edit-section-title">
+                                🤖 AI-Generated
+                                {buf.aiGenerated && buf.needsReview && (
+                                  <span className="badge-ai-review">Needs Review</span>
+                                )}
+                                {buf.llmModel && (
+                                  <span className="ai-model-label">{buf.llmModel}</span>
+                                )}
+                              </div>
+                              <div className="edit-extra-grid">
+                                <div className="form-group-sm"><label>Summary</label>
+                                  <input className="input-sm" value={buf.summary ?? ''}
+                                    onChange={e => setBuf(p => p ? { ...p, summary: e.target.value || null, manuallyEdited: true } : p)} /></div>
+                                <div className="form-group-sm"><label>Tags (comma-separated)</label>
+                                  <input className="input-sm"
+                                    value={buf.tags?.join(', ') ?? ''}
+                                    onChange={e => setBuf(p => p ? {
+                                      ...p,
+                                      tags: e.target.value.split(',').map(t => t.trim()).filter(Boolean),
+                                      manuallyEdited: true
+                                    } : p)} /></div>
+                              </div>
                             </div>
                           </td>
                         </tr>
@@ -172,42 +197,22 @@ export default function Review() {
                           <td><span className="method-badge" style={{ background: METHOD_COLORS[api.method] ?? '#64748b' }}>{api.method}</span></td>
                           <td>
                             <span className="mono">{api.path}</span>
-                            {endpointLabel(api) && (
-                              <div className="endpoint-label">{endpointLabel(api)}</div>
+                            {(api.summary || api.description) && (
+                              <div className="endpoint-label">
+                                {api.summary || api.description}
+                                {api.aiGenerated && api.needsReview && (
+                                  <span className="badge-ai-review" style={{ marginLeft: '0.4rem' }}>🤖 Review</span>
+                                )}
+                              </div>
                             )}
                           </td>
                           <td>{api.controller ?? '—'}</td>
                           <td>{api.handler ?? '—'}</td>
                           <td className="action-cell">
-                            <button className="btn-xs btn-gray" onClick={() => toggleDetails(i)}
-                              title="Show extracted details">
-                              {openDetails.has(i) ? '▾' : '▸'}
-                            </button>
                             <button className="btn-xs btn-gray" onClick={() => startEdit(i)}>Edit</button>
                             <button className="btn-xs btn-red" onClick={() => deleteRow(i)}>✕</button>
                           </td>
                         </tr>
-                        {openDetails.has(i) && (
-                          <tr key={`${i}-details`} className="details-row">
-                            <td colSpan={5}>
-                              <EndpointDetails
-                                method={api.method}
-                                path={api.path}
-                                handler={api.handler}
-                                description={api.description}
-                                parameters={api.parameters}
-                                requestBodyType={api.requestBodyType}
-                                requestBodyFields={api.requestBodyFields}
-                                responseBodyType={api.responseBodyType}
-                                responseBodyFields={api.responseBodyFields}
-                                statusCodes={api.statusCodes}
-                                tags={api.tags}
-                                sourceFile={api.sourceFile}
-                                sourceLine={api.sourceLine}
-                              />
-                            </td>
-                          </tr>
-                        )}
                       </>
                     )
                   ))}

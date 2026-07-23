@@ -1,11 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { searchEndpoints, getRepository, deleteRepository, rescanRepository } from '../api/client'
-import type { SearchResultItem, EndpointDetail } from '../api/client'
-import { EndpointModal } from '../components/EndpointModal'
-import { EndpointCard } from '../components/EndpointCard'
-import { groupByCapability, getGroupIcon } from '../utils/groupEndpoints'
-import { endpointLabel, toBasicDetail } from '../utils/humanReadable'
+import { getRepositories, searchEndpoints, deleteRepository, rescanRepository } from '../api/client'
+import type { RepositorySummary, SearchResultItem } from '../api/client'
 
 const METHODS = ['', 'GET', 'POST', 'PUT', 'DELETE', 'PATCH']
 const METHOD_COLORS: Record<string, string> = {
@@ -21,95 +17,78 @@ function useDebounce<T>(value: T, delay: number): T {
 export default function Catalog() {
   const navigate = useNavigate()
 
-  const [allEndpoints,   setAllEndpoints]   = useState<SearchResultItem[]>([])
-  const [loadingAll,     setLoadingAll]     = useState(true)
-  const [epDetails,      setEpDetails]      = useState<Map<number, EndpointDetail>>(new Map())
-  const [detailsLoading, setDetailsLoading] = useState<Set<number>>(new Set())
-  const [openEp,         setOpenEp]         = useState<SearchResultItem | null>(null)
-  const modalSr = openEp
-  const setModalSr = setOpenEp
-  const [viewModes,      setViewModes]      = useState<Record<string, 'cards' | 'table'>>({})
-  const [actionLoading,  setActionLoading]  = useState<number | null>(null)
+  // Repos (for card grid)
+  const [repos, setRepos]       = useState<RepositorySummary[]>([])
+  const [loadingRepos, setLR]   = useState(true)
+  const [actionLoading, setAL]  = useState<number | null>(null)
 
+  // Search
   const [fp, setFp] = useState('')
   const [fm, setFm] = useState('')
   const [ff, setFf] = useState('')
   const [fr, setFr] = useState('')
-  const [searchResults, setSearchResults] = useState<SearchResultItem[] | null>(null)
-  const [searching,     setSearching]     = useState(false)
-  const [error,         setError]         = useState<string | null>(null)
-
-  const getVM = (g: string) => viewModes[g] ?? 'cards'
-  const setVM = (g: string, m: 'cards' | 'table') => setViewModes(p => ({ ...p, [g]: m }))
+  const [searchResults, setSR]    = useState<SearchResultItem[] | null>(null)
+  const [searching, setSearching] = useState(false)
+  const [error, setError]         = useState<string | null>(null)
 
   const dbPath = useDebounce(fp, 350)
   const dbFw   = useDebounce(ff, 350)
   const dbRepo = useDebounce(fr, 350)
   const isFiltering = !!(dbPath || fm || dbFw || dbRepo)
 
-  const loadAll = () =>
-    searchEndpoints({}).then(setAllEndpoints).catch(e => setError(e.message)).finally(() => setLoadingAll(false))
-
-  useEffect(() => { loadAll() }, [])
-
+  // Load repos
   useEffect(() => {
-    if (!isFiltering) { setSearchResults(null); return }
+    getRepositories()
+      .then(setRepos)
+      .catch(e => setError(e.message))
+      .finally(() => setLR(false))
+  }, [])
+
+  // Search
+  useEffect(() => {
+    if (!isFiltering) { setSR(null); return }
     setSearching(true)
-    searchEndpoints({ path: dbPath || undefined, method: fm || undefined, framework: dbFw || undefined, repo: dbRepo || undefined })
-      .then(setSearchResults).catch(e => setError(e.message)).finally(() => setSearching(false))
+    searchEndpoints({
+      path: dbPath || undefined,
+      method: fm || undefined,
+      framework: dbFw || undefined,
+      repo: dbRepo || undefined,
+    })
+      .then(setSR).catch(e => setError(e.message)).finally(() => setSearching(false))
   }, [dbPath, fm, dbFw, dbRepo, isFiltering])
 
-  const frameworks   = Array.from(new Set(allEndpoints.map(e => e.framework))).sort()
-  const displayItems = isFiltering ? (searchResults ?? []) : allEndpoints
-  const groups       = groupByCapability(displayItems)
+  const clearFilters = () => { setFp(''); setFm(''); setFf(''); setFr('') }
 
-  const clearFilters = () => { setFp(''); setFm(''); setFf(''); setFr(''); setSearchResults(null) }
+  const frameworks = Array.from(new Set(repos.map(r => r.framework).filter(Boolean))).sort()
 
-  const toggleCard = async (sr: SearchResultItem) => {
-    const id = sr.endpointId
-    setModalSr(sr)
-    if (!epDetails.has(id)) {
-      setDetailsLoading(prev => new Set(prev).add(id))
-      try {
-        const rd = await getRepository(sr.repositoryId)
-        const ep = rd.endpoints.find(e => e.id === id)
-        if (ep) setEpDetails(prev => new Map(prev).set(id, ep))
-      } catch {}
-      finally { setDetailsLoading(prev => { const s = new Set(prev); s.delete(id); return s }) }
-    }
-  }
-
-  const closeModal = () => setModalSr(null)
-
-  const handleDelete = async (repoId: number) => {
-    setActionLoading(repoId)
+  const handleDelete = async (repo: RepositorySummary, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!window.confirm(`Delete "${repo.name}" and all its endpoints?`)) return
+    setAL(repo.id)
     try {
-      await deleteRepository(repoId)
-      setAllEndpoints(prev => prev.filter(ep => ep.repositoryId !== repoId))
-      setSearchResults(prev => prev ? prev.filter(ep => ep.repositoryId !== repoId) : null)
+      await deleteRepository(repo.id)
+      setRepos(prev => prev.filter(r => r.id !== repo.id))
     } catch { setError('Delete failed') }
-    finally { setActionLoading(null) }
+    finally { setAL(null) }
   }
 
-  const handleRescan = async (repoId: number) => {
-    setActionLoading(repoId)
+  const handleRescan = async (repo: RepositorySummary, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setAL(repo.id)
     try {
-      await rescanRepository(repoId)
-      const updated = await searchEndpoints({})
-      setAllEndpoints(updated)
-      if (isFiltering) {
-        const filtered = await searchEndpoints({ path: dbPath || undefined, method: fm || undefined, framework: dbFw || undefined, repo: dbRepo || undefined })
-        setSearchResults(filtered)
-      }
+      await rescanRepository(repo.id)
+      const updated = await getRepositories()
+      setRepos(updated)
     } catch { setError('Re-scan failed') }
-    finally { setActionLoading(null) }
+    finally { setAL(null) }
   }
 
   return (
     <div className="page">
       <h1>API Catalog</h1>
-      <p className="subtitle">All API endpoints grouped by business capability across all repositories.</p>
+      <p className="subtitle">Browse repositories or search across all endpoints.</p>
 
+      {/* Search filter bar */}
       <div className="card search-bar">
         <div className="search-grid">
           <div className="form-group-sm">
@@ -138,108 +117,91 @@ export default function Catalog() {
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
-      {(loadingAll || searching) && <div className="alert alert-info">{searching ? 'Searching…' : 'Loading endpoints…'}</div>}
 
-      {!loadingAll && !searching && displayItems.length === 0 && (
-        <div className="card placeholder">
-          <p>
-            {isFiltering ? 'No endpoints match the current filters.' : 'No APIs saved yet.'}
-            {!isFiltering && <> <a href="/review">Submit a repository →</a></>}
-          </p>
-        </div>
-      )}
-
-      {!loadingAll && displayItems.length > 0 && Array.from(groups.entries()).map(([groupName, items]) => (
-        <div key={groupName} className="capability-group-card">
-          <div className="capability-group-header">
-            <span className="capability-icon">{getGroupIcon(groupName)}</span>
-            <span className="capability-name">{groupName}</span>
-            <span className="capability-count">{items.length}</span>
-            <div className="view-toggle" style={{ marginLeft: 'auto' }}>
-              <button className={`vt-btn${getVM(groupName) === 'cards' ? ' vt-btn--active' : ''}`}
-                onClick={() => setVM(groupName, 'cards')}>⊞ Cards</button>
-              <button className={`vt-btn${getVM(groupName) === 'table' ? ' vt-btn--active' : ''}`}
-                onClick={() => setVM(groupName, 'table')}>≡ Table</button>
-            </div>
-          </div>
-
-          {getVM(groupName) === 'cards' ? (
-            <div className="endpoint-cards-grid" style={{ padding: '0.75rem' }}>
-              {items.map(sr => {
-                const detail = epDetails.get(sr.endpointId) ?? toBasicDetail(sr)
-                return (
-                  <EndpointCard
-                    key={sr.endpointId}
-                    ep={detail}
-                    repoId={sr.repositoryId}
-                    repoName={sr.repositoryName}
-                    repoFramework={sr.framework}
-                    isOpen={modalSr?.endpointId === sr.endpointId}
-                    isLoadingDetails={detailsLoading.has(sr.endpointId)}
-                    isActionLoading={actionLoading === sr.repositoryId}
-                    onToggle={() => toggleCard(sr)}
-                    onViewRepo={id => navigate(`/catalog/repo/${id}`)}
-                    onDeleteRepo={handleDelete}
-                    onRescanRepo={handleRescan}
-                  />
-                )
-              })}
-            </div>
-          ) : (
+      {/* ── Search results ─────────────────────────────────────────── */}
+      {isFiltering && (
+        <div className="card" style={{ marginTop: '1rem' }}>
+          {searching ? (
+            <p className="loading-text">Searching…</p>
+          ) : searchResults && searchResults.length === 0 ? (
+            <p className="empty-text">No endpoints match the current filters.</p>
+          ) : searchResults ? (
             <table className="api-table">
               <thead>
-                <tr><th>Method</th><th>Path</th><th>Repository</th><th>Handler</th></tr>
+                <tr><th>Method</th><th>Path / Summary</th><th>Repository</th></tr>
               </thead>
               <tbody>
-                {items.map(sr => (
-                  <tr key={sr.endpointId} style={{ cursor: 'pointer' }} onClick={() => toggleCard(sr)}>
-                    <td><span className="method-badge" style={{ background: METHOD_COLORS[sr.method] ?? '#64748b' }}>{sr.method}</span></td>
+                {searchResults.map(sr => (
+                  <tr key={sr.endpointId} style={{ cursor: 'pointer' }}
+                    onClick={() => navigate(`/viewer/${sr.repositoryId}`)}>
+                    <td>
+                      <span className="method-badge" style={{ background: METHOD_COLORS[sr.method] ?? '#64748b' }}>
+                        {sr.method}
+                      </span>
+                    </td>
                     <td>
                       <span className="mono">{sr.path}</span>
-                      {endpointLabel(sr) && <div className="endpoint-label">{endpointLabel(sr)}</div>}
+                      {sr.description && <div className="endpoint-label">{sr.description}</div>}
                     </td>
                     <td>
-                      <span className="repo-name-inline"
-                        style={{ cursor: 'pointer', color: '#2563eb' }}
-                        onClick={e => { e.stopPropagation(); navigate(`/catalog/repo/${sr.repositoryId}`) }}>
-                        {sr.repositoryName}
-                      </span>
+                      <span className="repo-name-inline">{sr.repositoryName}</span>
                       <span className="badge badge-green" style={{ marginLeft: '0.4rem', fontSize: '0.68rem' }}>{sr.framework}</span>
                     </td>
-                    <td>{sr.handler ?? '—'}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          )}
+          ) : null}
         </div>
-      ))}
+      )}
 
-      {/* ── Endpoint detail modal ────────────────── */}
-      {modalSr && (() => {
-        const detail = epDetails.get(modalSr.endpointId)
-        const loading = detailsLoading.has(modalSr.endpointId)
-        return (
-          <EndpointModal
-            method={detail?.method ?? modalSr.method}
-            path={detail?.path ?? modalSr.path}
-            handler={detail?.handler}
-            description={detail?.description}
-            parameters={detail?.parameters}
-            requestBodyType={detail?.requestBodyType}
-            requestBodyFields={detail?.requestBodyFields}
-            responseBodyType={detail?.responseBodyType}
-            responseBodyFields={detail?.responseBodyFields}
-            statusCodes={detail?.statusCodes}
-            tags={detail?.tags}
-            sourceFile={detail?.sourceFile}
-            sourceLine={detail?.sourceLine}
-            badge={modalSr.repositoryName}
-            loading={loading}
-            onClose={closeModal}
-          />
-        )
-      })()}
+      {/* ── Repository cards ───────────────────────────────────────── */}
+      {!isFiltering && (
+        <>
+          {loadingRepos ? (
+            <div className="alert alert-info">Loading repositories…</div>
+          ) : repos.length === 0 ? (
+            <div className="card placeholder">
+              <p>No repositories saved yet. <a href="/review">Submit one →</a></p>
+            </div>
+          ) : (
+            <div className="repos-grid">
+              {repos.map((repo, idx) => (
+                <div key={repo.id} className="repo-card">
+                  <div className="repo-card-header">
+                    <span className="repo-card-name">{repo.name}</span>
+                    {idx === 0 && <span className="badge-latest">Latest</span>}
+                  </div>
+                  <div className="repo-card-meta">
+                    <span className="badge badge-green">{repo.framework}</span>
+                    <span className="meta-pill">{repo.endpointCount} endpoint{repo.endpointCount !== 1 ? 's' : ''}</span>
+                    <span className="meta-pill">{new Date(repo.createdAt).toLocaleDateString()}</span>
+                  </div>
+                  {repo.hostUrl && (
+                    <div className="host-url-row" onClick={e => e.stopPropagation()}>
+                      <span className="host-label">API Base:</span>
+                      <a href={repo.hostUrl} target="_blank" rel="noopener noreferrer" className="url-link">{repo.hostUrl}</a>
+                    </div>
+                  )}
+                  <div className="repo-card-actions">
+                    <button className="btn btn-primary" onClick={() => navigate(`/viewer/${repo.id}`)}>
+                      📖 View Documentation
+                    </button>
+                    <button className="btn-xs btn-gray" disabled={actionLoading === repo.id}
+                      onClick={e => handleRescan(repo, e)} title="Re-scan">
+                      {actionLoading === repo.id ? '…' : '↺ Re-scan'}
+                    </button>
+                    <button className="btn-xs btn-red" disabled={actionLoading === repo.id}
+                      onClick={e => handleDelete(repo, e)} title="Delete">
+                      🗑
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </div>
   )
 }

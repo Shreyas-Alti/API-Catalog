@@ -116,5 +116,12 @@ export function toBasicDetail(sr: SearchResultItem): EndpointDetail {
     statusCodes: null,
     sourceFile: null,
     sourceLine: null,
+    summary: null,
+    requestExample: null,
+    responseExample: null,
+    aiGenerated: false,
+    needsReview: false,
+    llmModel: null,
+    manuallyEdited: false,
   }
 }

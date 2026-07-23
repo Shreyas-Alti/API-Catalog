@@ -20,6 +20,8 @@ public class SaveRequest {
 
     private List<ExtractedApi> apis;
 
+    private String commitSha;
+
     public String getUrl() { return url; }
     public void setUrl(String url) { this.url = url; }
 
@@ -34,4 +36,7 @@ public class SaveRequest {
 
     public List<ExtractedApi> getApis() { return apis; }
     public void setApis(List<ExtractedApi> apis) { this.apis = apis; }
+
+    public String getCommitSha() { return commitSha; }
+    public void setCommitSha(String commitSha) { this.commitSha = commitSha; }
 }

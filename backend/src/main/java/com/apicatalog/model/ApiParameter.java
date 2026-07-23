@@ -13,6 +13,7 @@ public class ApiParameter {
     private String location;
     private boolean required;
     private List<String> validations;
+    private String description;
 
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
@@ -28,4 +29,7 @@ public class ApiParameter {
 
     public List<String> getValidations() { return validations; }
     public void setValidations(List<String> validations) { this.validations = validations; }
+
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
 }

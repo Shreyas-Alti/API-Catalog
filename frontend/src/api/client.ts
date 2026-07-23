@@ -6,12 +6,14 @@ export interface ApiParameter {
   location: string // PATH | QUERY | HEADER | BODY | COOKIE
   required: boolean
   validations: string[] | null
+  description: string | null
 }
 
 export interface ApiField {
   name: string
   type: string | null
   validations: string[] | null
+  description: string | null
 }
 
 export interface ExtractedApi {
@@ -29,6 +31,14 @@ export interface ExtractedApi {
   statusCodes: number[] | null
   sourceFile: string | null
   sourceLine: number | null
+  // AI-enriched
+  summary: string | null
+  requestExample: Record<string, unknown> | null
+  responseExample: Record<string, unknown> | null
+  aiGenerated: boolean
+  needsReview: boolean
+  llmModel: string | null
+  manuallyEdited: boolean
 }
 
 export interface SubmitResponse {
@@ -38,6 +48,7 @@ export interface SubmitResponse {
   framework: string
   supported: boolean
   apis: ExtractedApi[]
+  commitSha: string | null
 }
 
 export interface SaveRequest {
@@ -46,6 +57,7 @@ export interface SaveRequest {
   name: string
   framework: string
   apis: ExtractedApi[]
+  commitSha: string | null
 }
 
 export interface RepositorySummary {
@@ -74,6 +86,13 @@ export interface EndpointDetail {
   statusCodes: number[] | null
   sourceFile: string | null
   sourceLine: number | null
+  summary: string | null
+  requestExample: Record<string, unknown> | null
+  responseExample: Record<string, unknown> | null
+  aiGenerated: boolean
+  needsReview: boolean
+  llmModel: string | null
+  manuallyEdited: boolean
 }
 
 export interface RepositoryDetail {
@@ -116,6 +135,10 @@ export const deleteRepository = (id: number) =>
 
 export const rescanRepository = (id: number) =>
   request<RepositoryDetail>(`/repositories/${id}/rescan`, { method: 'POST' })
+
+export const regenerateEndpoint = (id: number, force = false) =>
+  fetch(`${BASE_URL}/endpoints/${id}/regenerate?force=${force}`, { method: 'POST' })
+    .then(res => { if (!res.ok && res.status !== 204) throw new Error(`Regenerate failed (${res.status})`) })
 
 export interface SearchResultItem {
   endpointId: number

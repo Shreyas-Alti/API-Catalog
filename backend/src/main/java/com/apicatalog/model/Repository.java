@@ -25,6 +25,18 @@ public class Repository {
     @Column
     private String framework;
 
+    @Column(name = "commit_sha", length = 64)
+    private String commitSha;
+
+    @Column(name = "openapi_cache", columnDefinition = "TEXT")
+    private String openapiCache;
+
+    @Column(name = "openapi_dirty", nullable = false)
+    private boolean openapiDirty = true;
+
+    @Column(name = "openapi_generated_at")
+    private LocalDateTime openapiGeneratedAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -50,6 +62,18 @@ public class Repository {
 
     public String getFramework() { return framework; }
     public void setFramework(String framework) { this.framework = framework; }
+
+    public String getCommitSha() { return commitSha; }
+    public void setCommitSha(String commitSha) { this.commitSha = commitSha; }
+
+    public String getOpenapiCache() { return openapiCache; }
+    public void setOpenapiCache(String openapiCache) { this.openapiCache = openapiCache; }
+
+    public boolean isOpenapiDirty() { return openapiDirty; }
+    public void setOpenapiDirty(boolean openapiDirty) { this.openapiDirty = openapiDirty; }
+
+    public LocalDateTime getOpenapiGeneratedAt() { return openapiGeneratedAt; }
+    public void setOpenapiGeneratedAt(LocalDateTime openapiGeneratedAt) { this.openapiGeneratedAt = openapiGeneratedAt; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
 

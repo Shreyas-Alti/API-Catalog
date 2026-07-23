@@ -2,6 +2,7 @@ package com.apicatalog.service;
 
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
+import org.eclipse.jgit.lib.ObjectId;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -14,16 +15,25 @@ import java.util.Comparator;
 @Service
 public class CloneService {
 
-    public Path clone(String url) {
+    public record CloneResult(Path path, String commitSha) {}
+
+    public CloneResult clone(String url) {
         try {
             Path tempDir = Files.createTempDirectory("api-catalog-");
-            Git.cloneRepository()
+            try (Git git = Git.cloneRepository()
                     .setURI(url)
                     .setDirectory(tempDir.toFile())
                     .setDepth(1)
-                    .call()
-                    .close();
-            return tempDir;
+                    .call()) {
+
+                String sha = "";
+                try {
+                    ObjectId head = git.getRepository().resolve("HEAD");
+                    if (head != null) sha = head.getName();
+                } catch (Exception ignored) {}
+
+                return new CloneResult(tempDir, sha);
+            }
         } catch (GitAPIException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Failed to clone repository: " + e.getMessage());

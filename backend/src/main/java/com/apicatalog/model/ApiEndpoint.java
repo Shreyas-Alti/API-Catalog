@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import java.util.List;
+import java.util.Map;
 
 @Entity
 @Table(name = "api_endpoints")
@@ -21,6 +22,22 @@ public class ApiEndpoint {
     @Column(columnDefinition = "TEXT") private String description;
     @Column private String controller;
     @Column private String handler;
+
+    // ── AI-enriched fields ────────────────────────────────────
+    @Column private String summary;
+
+    @JdbcTypeCode(SqlTypes.JSON) @Column(name = "request_example", columnDefinition = "jsonb")
+    private Map<String, Object> requestExample;
+
+    @JdbcTypeCode(SqlTypes.JSON) @Column(name = "response_example", columnDefinition = "jsonb")
+    private Map<String, Object> responseExample;
+
+    @Column(name = "ai_generated", nullable = false) private boolean aiGenerated = false;
+    @Column(name = "needs_review",  nullable = false) private boolean needsReview = false;
+    @Column(name = "llm_model")  private String llmModel;
+    @Column(name = "manually_edited", nullable = false) private boolean manuallyEdited = false;
+
+    // ── Parser-extracted fields ───────────────────────────────
 
     @JdbcTypeCode(SqlTypes.JSON) @Column(columnDefinition = "jsonb")
     private List<ApiParameter> parameters;
@@ -58,6 +75,22 @@ public class ApiEndpoint {
     public void setController(String controller) { this.controller = controller; }
     public String getHandler() { return handler; }
     public void setHandler(String handler) { this.handler = handler; }
+
+    public String getSummary() { return summary; }
+    public void setSummary(String summary) { this.summary = summary; }
+    public Map<String, Object> getRequestExample() { return requestExample; }
+    public void setRequestExample(Map<String, Object> requestExample) { this.requestExample = requestExample; }
+    public Map<String, Object> getResponseExample() { return responseExample; }
+    public void setResponseExample(Map<String, Object> responseExample) { this.responseExample = responseExample; }
+    public boolean isAiGenerated() { return aiGenerated; }
+    public void setAiGenerated(boolean aiGenerated) { this.aiGenerated = aiGenerated; }
+    public boolean isNeedsReview() { return needsReview; }
+    public void setNeedsReview(boolean needsReview) { this.needsReview = needsReview; }
+    public String getLlmModel() { return llmModel; }
+    public void setLlmModel(String llmModel) { this.llmModel = llmModel; }
+    public boolean isManuallyEdited() { return manuallyEdited; }
+    public void setManuallyEdited(boolean manuallyEdited) { this.manuallyEdited = manuallyEdited; }
+
     public List<ApiParameter> getParameters() { return parameters; }
     public void setParameters(List<ApiParameter> parameters) { this.parameters = parameters; }
     public String getRequestBodyType() { return requestBodyType; }

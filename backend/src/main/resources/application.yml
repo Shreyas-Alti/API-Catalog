@@ -29,3 +29,9 @@ logging:
   level:
     com.apicatalog: DEBUG
     org.springframework.web: INFO
+
+llm:
+  enabled: false
+  api-key: ${ANTHROPIC_API_KEY:}
+  model: claude-sonnet-4-6
+  base-url: https://api.anthropic.com

@@ -15,30 +15,44 @@ import java.util.List;
 @Service
 public class RepositoryService {
 
-    private final CloneService cloneService;
-    private final ExtractionService extractionService;
-    private final RepositoryRepo repositoryRepo;
+    private final CloneService               cloneService;
+    private final ExtractionService          extractionService;
+    private final EndpointEnrichmentService  enrichmentService;
+    private final RepositoryRepo             repositoryRepo;
 
-    public RepositoryService(CloneService cloneService, ExtractionService extractionService,
+    public RepositoryService(CloneService cloneService,
+                             ExtractionService extractionService,
+                             EndpointEnrichmentService enrichmentService,
                              RepositoryRepo repositoryRepo) {
-        this.cloneService = cloneService;
-        this.extractionService = extractionService;
-        this.repositoryRepo = repositoryRepo;
+        this.cloneService       = cloneService;
+        this.extractionService  = extractionService;
+        this.enrichmentService  = enrichmentService;
+        this.repositoryRepo     = repositoryRepo;
     }
 
-    // ── Phase 2/3/4 ──────────────────────────────────────────────────────────
+    // ── Submit: clone → detect → extract → enrich ────────────────────────────
 
     public SubmitResponse submit(SubmitRequest request) {
         String repoName = extractRepoName(request.getUrl());
-        Path tempDir = null;
+        CloneService.CloneResult cloneResult = null;
         try {
-            tempDir = cloneService.clone(request.getUrl());
+            cloneResult = cloneService.clone(request.getUrl());
+            Path tempDir  = cloneResult.path();
+            String commitSha = cloneResult.commitSha();
+
             String framework = extractionService.detectFramework(tempDir);
             boolean supported = !"Unsupported".equals(framework);
             List<ExtractedApi> apis = supported ? extractionService.extract(tempDir) : List.of();
-            return new SubmitResponse(repoName, request.getUrl(), request.getHostUrl(), framework, supported, apis);
+
+            // LLM enrichment (no-op if llm.enabled = false)
+            if (!apis.isEmpty()) {
+                enrichmentService.enrich(apis, tempDir, repoName);
+            }
+
+            return new SubmitResponse(repoName, request.getUrl(), request.getHostUrl(),
+                    framework, supported, apis, commitSha);
         } finally {
-            cloneService.cleanup(tempDir);
+            if (cloneResult != null) cloneService.cleanup(cloneResult.path());
         }
     }
 
@@ -50,6 +64,8 @@ public class RepositoryService {
         repo.setUrl(request.getUrl());
         repo.setHostUrl(request.getHostUrl());
         repo.setFramework(request.getFramework());
+        repo.setCommitSha(request.getCommitSha());
+        repo.setOpenapiDirty(true);
         populateEndpoints(repo, request.getApis());
         return toDetailDto(repositoryRepo.save(repo));
     }
@@ -65,17 +81,21 @@ public class RepositoryService {
         Repository repo = repositoryRepo.findByIdWithEndpoints(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "Repository not found: " + id));
-        Path tempDir = null;
+        CloneService.CloneResult cloneResult = null;
         try {
-            tempDir = cloneService.clone(repo.getUrl());
+            cloneResult = cloneService.clone(repo.getUrl());
+            Path tempDir = cloneResult.path();
             String framework = extractionService.detectFramework(tempDir);
             boolean supported = !"Unsupported".equals(framework);
             List<ExtractedApi> apis = supported ? extractionService.extract(tempDir) : List.of();
+            if (!apis.isEmpty()) enrichmentService.enrich(apis, tempDir, repo.getName());
             repo.setFramework(framework);
+            repo.setCommitSha(cloneResult.commitSha());
+            repo.setOpenapiDirty(true);
             populateEndpoints(repo, apis);
             return toDetailDto(repositoryRepo.save(repo));
         } finally {
-            cloneService.cleanup(tempDir);
+            if (cloneResult != null) cloneService.cleanup(cloneResult.path());
         }
     }
 
@@ -116,6 +136,14 @@ public class RepositoryService {
             endpoint.setStatusCodes(api.getStatusCodes());
             endpoint.setSourceFile(api.getSourceFile());
             endpoint.setSourceLine(api.getSourceLine());
+            // AI-enriched fields
+            endpoint.setSummary(api.getSummary());
+            endpoint.setRequestExample(api.getRequestExample());
+            endpoint.setResponseExample(api.getResponseExample());
+            endpoint.setAiGenerated(api.isAiGenerated());
+            endpoint.setNeedsReview(false); // cleared when user explicitly saves
+            endpoint.setLlmModel(api.getLlmModel());
+            endpoint.setManuallyEdited(api.isManuallyEdited());
             repo.getEndpoints().add(endpoint);
         }
     }
@@ -139,6 +167,13 @@ public class RepositoryService {
                     dto.setStatusCodes(e.getStatusCodes());
                     dto.setSourceFile(e.getSourceFile());
                     dto.setSourceLine(e.getSourceLine());
+                    dto.setSummary(e.getSummary());
+                    dto.setRequestExample(e.getRequestExample());
+                    dto.setResponseExample(e.getResponseExample());
+                    dto.setAiGenerated(e.isAiGenerated());
+                    dto.setNeedsReview(e.isNeedsReview());
+                    dto.setLlmModel(e.getLlmModel());
+                    dto.setManuallyEdited(e.isManuallyEdited());
                     return dto;
                 }).toList();
 

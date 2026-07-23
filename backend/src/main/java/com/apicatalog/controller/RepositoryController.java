@@ -1,8 +1,10 @@
 package com.apicatalog.controller;
 
 import com.apicatalog.dto.*;
+import com.apicatalog.service.OpenApiGeneratorService;
 import com.apicatalog.service.RepositoryService;
 import jakarta.validation.Valid;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -12,10 +14,13 @@ import java.util.List;
 @RequestMapping("/api/repositories")
 public class RepositoryController {
 
-    private final RepositoryService repositoryService;
+    private final RepositoryService        repositoryService;
+    private final OpenApiGeneratorService  openApiService;
 
-    public RepositoryController(RepositoryService repositoryService) {
+    public RepositoryController(RepositoryService repositoryService,
+                                OpenApiGeneratorService openApiService) {
         this.repositoryService = repositoryService;
+        this.openApiService    = openApiService;
     }
 
     // Phase 2/3/4 – submit URL, clone, detect, extract
@@ -53,5 +58,13 @@ public class RepositoryController {
     @PostMapping("/{id}/rescan")
     public ResponseEntity<RepositoryDetailDto> rescan(@PathVariable Long id) {
         return ResponseEntity.ok(repositoryService.rescan(id));
+    }
+
+    // OpenAPI 3.1 document (generated + cached)
+    @GetMapping(value = "/{id}/openapi.json", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<String> openapiJson(@PathVariable Long id) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(openApiService.getOrGenerate(id));
     }
 }
