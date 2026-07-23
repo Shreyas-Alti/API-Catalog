@@ -5,6 +5,7 @@ import com.apicatalog.model.ApiEndpoint;
 import com.apicatalog.model.ExtractedApi;
 import com.apicatalog.model.Repository;
 import com.apicatalog.repository.RepositoryRepo;
+import com.apicatalog.service.mcp.McpToolRegistrationService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -15,19 +16,22 @@ import java.util.List;
 @Service
 public class RepositoryService {
 
-    private final CloneService               cloneService;
-    private final ExtractionService          extractionService;
-    private final EndpointEnrichmentService  enrichmentService;
-    private final RepositoryRepo             repositoryRepo;
+    private final CloneService                  cloneService;
+    private final ExtractionService             extractionService;
+    private final EndpointEnrichmentService     enrichmentService;
+    private final RepositoryRepo                repositoryRepo;
+    private final McpToolRegistrationService    mcpRegistration;
 
     public RepositoryService(CloneService cloneService,
                              ExtractionService extractionService,
                              EndpointEnrichmentService enrichmentService,
-                             RepositoryRepo repositoryRepo) {
+                             RepositoryRepo repositoryRepo,
+                             McpToolRegistrationService mcpRegistration) {
         this.cloneService       = cloneService;
         this.extractionService  = extractionService;
         this.enrichmentService  = enrichmentService;
         this.repositoryRepo     = repositoryRepo;
+        this.mcpRegistration    = mcpRegistration;
     }
 
     // ── Submit: clone → detect → extract → enrich ────────────────────────────
@@ -67,13 +71,16 @@ public class RepositoryService {
         repo.setCommitSha(request.getCommitSha());
         repo.setOpenapiDirty(true);
         populateEndpoints(repo, request.getApis());
-        return toDetailDto(repositoryRepo.save(repo));
+        Repository saved = repositoryRepo.save(repo);
+        mcpRegistration.registerForRepository(saved);
+        return toDetailDto(saved);
     }
 
     public void delete(Long id) {
         if (!repositoryRepo.existsById(id)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Repository not found: " + id);
         }
+        mcpRegistration.unregisterForRepository(id);
         repositoryRepo.deleteById(id);
     }
 
@@ -93,7 +100,9 @@ public class RepositoryService {
             repo.setCommitSha(cloneResult.commitSha());
             repo.setOpenapiDirty(true);
             populateEndpoints(repo, apis);
-            return toDetailDto(repositoryRepo.save(repo));
+            Repository saved = repositoryRepo.save(repo);
+            mcpRegistration.registerForRepository(saved);
+            return toDetailDto(saved);
         } finally {
             if (cloneResult != null) cloneService.cleanup(cloneResult.path());
         }

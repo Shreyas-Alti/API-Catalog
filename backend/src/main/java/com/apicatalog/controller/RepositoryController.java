@@ -1,6 +1,7 @@
 package com.apicatalog.controller;
 
 import com.apicatalog.dto.*;
+import com.apicatalog.service.AskAgentService;
 import com.apicatalog.service.OpenApiGeneratorService;
 import com.apicatalog.service.RepositoryService;
 import jakarta.validation.Valid;
@@ -16,11 +17,14 @@ public class RepositoryController {
 
     private final RepositoryService        repositoryService;
     private final OpenApiGeneratorService  openApiService;
+    private final AskAgentService          askAgentService;
 
     public RepositoryController(RepositoryService repositoryService,
-                                OpenApiGeneratorService openApiService) {
+                                OpenApiGeneratorService openApiService,
+                                AskAgentService askAgentService) {
         this.repositoryService = repositoryService;
         this.openApiService    = openApiService;
+        this.askAgentService   = askAgentService;
     }
 
     // Phase 2/3/4 – submit URL, clone, detect, extract
@@ -66,5 +70,11 @@ public class RepositoryController {
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(openApiService.getOrGenerate(id));
+    }
+
+    // Ask Agent — one question, one answer
+    @PostMapping("/{id}/ask")
+    public AskResponse ask(@PathVariable Long id, @RequestBody AskRequest request) {
+        return new AskResponse(askAgentService.ask(id, request.getQuestion()));
     }
 }

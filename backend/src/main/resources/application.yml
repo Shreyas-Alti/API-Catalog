@@ -37,3 +37,12 @@ llm:
   api-key: ${GEMINI_API_KEY:}
   model: gemini-2.0-flash
   base-url: https://generativelanguage.googleapis.com
+
+spring:
+  ai:
+    mcp:
+      server:
+        name: api-catalog-mcp
+        version: 1.0.0
+        type: SYNC
+        protocol: STREAMABLE

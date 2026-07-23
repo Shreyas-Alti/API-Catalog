@@ -9,6 +9,7 @@ import com.apicatalog.repository.ApiEndpointRepo;
 import com.apicatalog.repository.RepositoryRepo;
 import com.apicatalog.service.CloneService;
 import com.apicatalog.service.EndpointEnrichmentService;
+import com.apicatalog.service.mcp.McpToolRegistrationService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -23,22 +24,25 @@ import java.util.List;
 @RequestMapping("/api/endpoints")
 public class EndpointController {
 
-    private final ApiEndpointRepo         endpointRepo;
-    private final RepositoryRepo           repositoryRepo;
-    private final EndpointEnrichmentService enrichmentService;
-    private final CloneService            cloneService;
-    private final LlmProperties           llmProperties;
+    private final ApiEndpointRepo          endpointRepo;
+    private final RepositoryRepo            repositoryRepo;
+    private final EndpointEnrichmentService  enrichmentService;
+    private final CloneService              cloneService;
+    private final LlmProperties             llmProperties;
+    private final McpToolRegistrationService mcpRegistration;
 
     public EndpointController(ApiEndpointRepo endpointRepo,
                               RepositoryRepo repositoryRepo,
                               EndpointEnrichmentService enrichmentService,
                               CloneService cloneService,
-                              LlmProperties llmProperties) {
+                              LlmProperties llmProperties,
+                              McpToolRegistrationService mcpRegistration) {
         this.endpointRepo       = endpointRepo;
         this.repositoryRepo     = repositoryRepo;
         this.enrichmentService  = enrichmentService;
         this.cloneService       = cloneService;
         this.llmProperties      = llmProperties;
+        this.mcpRegistration    = mcpRegistration;
     }
 
     /**
@@ -70,8 +74,8 @@ public class EndpointController {
         Repository repo = ep.getRepository();
         repo.setOpenapiDirty(true);
         repositoryRepo.save(repo);
-
         endpointRepo.save(ep);
+        mcpRegistration.registerForRepository(repositoryRepo.findByIdWithEndpoints(repo.getId()).orElse(repo));
         return ResponseEntity.noContent().build();
     }
 
@@ -133,6 +137,8 @@ public class EndpointController {
             // Mark the parent repo dirty
             repo.setOpenapiDirty(true);
             endpointRepo.save(ep);
+            mcpRegistration.registerForRepository(
+                    repositoryRepo.findByIdWithEndpoints(repo.getId()).orElse(repo));
 
             return ResponseEntity.noContent().build();
         } finally {
