@@ -11,11 +11,6 @@ export default function ViewerPage() {
   const navigate = useNavigate()
   const [repoName, setRepoName] = useState<string | null>(null)
 
-  // Ask Agent state
-  const [question, setQuestion] = useState('')
-  const [answer,   setAnswer]   = useState<string | null>(null)
-  const [asking,   setAsking]   = useState(false)
-
   useEffect(() => {
     if (!id) return
     getRepository(Number(id))
@@ -24,25 +19,6 @@ export default function ViewerPage() {
   }, [id])
 
   if (!id) return null
-
-  async function handleAsk() {
-    if (!question.trim()) return
-    setAsking(true)
-    setAnswer(null)
-    try {
-      const res = await fetch(`${BACKEND}/api/repositories/${id}/ask`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question }),
-      })
-      const data = await res.json()
-      setAnswer(res.ok ? data.answer : `Error: ${data.message ?? res.statusText}`)
-    } catch {
-      setAnswer('Ask Agent is unavailable right now.')
-    } finally {
-      setAsking(false)
-    }
-  }
 
   return (
     <div style={{
@@ -69,33 +45,6 @@ export default function ViewerPage() {
           {repoName ?? `Repository #${id}`}
         </span>
       </div>
-
-      {/* Ask Agent bar */}
-      <div className="ask-bar">
-        <input
-          className="ask-input"
-          value={question}
-          onChange={e => setQuestion(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && !asking && handleAsk()}
-          placeholder="Ask about this API — e.g. 'which endpoint creates a user?'"
-          disabled={asking}
-        />
-        <button
-          className="btn btn-primary"
-          style={{ flexShrink: 0, fontSize: '0.83rem', padding: '0.35rem 0.9rem' }}
-          onClick={handleAsk}
-          disabled={asking || !question.trim()}>
-          {asking ? '…' : 'Ask'}
-        </button>
-      </div>
-
-      {/* Answer */}
-      {answer && (
-        <div className="ask-answer">
-          <span className="ask-answer-label">Answer</span>
-          {answer}
-        </div>
-      )}
 
       {/* Scalar */}
       <div style={{ flex: 1, overflow: 'auto' }}>
