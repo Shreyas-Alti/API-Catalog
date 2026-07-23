@@ -11,6 +11,7 @@ const METHOD_COLORS: Record<string, string> = {
 export default function Review() {
   const [url, setUrl] = useState('')
   const [hostUrl, setHostUrl] = useState('')
+  const [projectName, setProjectName] = useState('')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -62,7 +63,8 @@ export default function Review() {
     setSaving(true)
     setError(null)
     try {
-      const saved = await saveRepository({ url: result.url, hostUrl: result.hostUrl, name: result.name, framework: result.framework, apis: editedApis, commitSha })
+      const effectiveName = projectName.trim() || result.name
+      const saved = await saveRepository({ url: result.url, hostUrl: result.hostUrl, name: effectiveName, framework: result.framework, apis: editedApis, commitSha })
       setSavedId(saved.id)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Save failed')
@@ -81,14 +83,19 @@ export default function Review() {
 
       <form className="card" onSubmit={handleSubmit}>
         <div className="form-group">
-          <label htmlFor="url">Repository URL</label>
-          <input id="url" type="url" className="input" placeholder="https://github.com/owner/repo"
-            value={url} onChange={e => setUrl(e.target.value)} required disabled={loading} />
+          <label htmlFor="projectName">Project Name <span className="optional-label">(optional — defaults to repo name)</span></label>
+          <input id="projectName" type="text" className="input" placeholder="My API"
+            value={projectName} onChange={e => setProjectName(e.target.value)} disabled={loading} />
         </div>
         <div className="form-group">
           <label htmlFor="hostUrl">API Base URL <span className="optional-label">(optional — where this API is deployed)</span></label>
           <input id="hostUrl" type="url" className="input" placeholder="https://api.myapp.com"
             value={hostUrl} onChange={e => setHostUrl(e.target.value)} disabled={loading} />
+        </div>
+        <div className="form-group">
+          <label htmlFor="url">Repository URL</label>
+          <input id="url" type="url" className="input" placeholder="https://github.com/owner/repo"
+            value={url} onChange={e => setUrl(e.target.value)} required disabled={loading} />
         </div>
         <button type="submit" className="btn btn-primary" disabled={loading || !url}>
           {loading ? 'Cloning & extracting…' : 'Extract APIs'}
@@ -103,7 +110,7 @@ export default function Review() {
           <div className="card result-meta-card">
             <div className="result-meta">
               <div>
-                <h2>{result.name}</h2>
+                <h2>{projectName.trim() || result.name}</h2>
                 <a href={result.url} target="_blank" rel="noopener noreferrer" className="url-link">{result.url}</a>
                 {result.hostUrl && (
                   <div className="host-url-row">
