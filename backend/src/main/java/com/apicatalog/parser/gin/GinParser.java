@@ -115,6 +115,10 @@ public class GinParser implements ParserPlugin {
      * Collect the parenthesised argument list of a router.METHOD(...) call,
      * walking forward across line breaks until parens balance, then return
      * the last identifier — which is the handler (possibly after middleware).
+     *
+     * Identifiers are captured per-line from whatever portion precedes the
+     * closing paren, so single-line, multi-line, and last-arg-shares-closing-paren
+     * cases all resolve correctly.
      */
     private String resolveLastArg(String[] lines, int start) {
         int depth = 0; boolean started = false;
@@ -125,27 +129,28 @@ public class GinParser implements ParserPlugin {
                 if (c == '(') { started = true; depth++; }
                 else if (c == ')') {
                     depth--;
-                    if (started && depth == 0) return lastIdent;
-                }
-                // Track last word-character run we saw inside the parens
-                if (started && depth >= 1) {
-                    if (Character.isLetterOrDigit(c) || c == '_') {
-                        // still inside an identifier
-                    } else if (lastIdent == null || !Character.isLetterOrDigit(lines[i].charAt(Math.max(0, ci - 1)))) {
-                        // just ended an identifier — capture it
+                    if (started && depth == 0) {
+                        // Scan identifiers in the substring UP TO (not including) this ')'
+                        // so that args sharing the closing-paren line are captured.
+                        Matcher idm = Pattern.compile("\\b([A-Za-z_]\\w*)\\b")
+                                .matcher(lines[i].substring(0, ci));
+                        while (idm.find()) {
+                            String id = idm.group(1);
+                            if (!id.equals("nil") && !id.equals("true") && !id.equals("false")
+                                    && !id.equals("err") && !id.equals("ctx")) lastIdent = id;
+                        }
+                        return lastIdent;
                     }
                 }
             }
-            // Extract identifiers from this line (while inside the call)
+            // Extract identifiers from lines that are fully inside the call
+            // (i.e., we didn't hit depth==0 above, so this line had no closing paren)
             if (started && depth >= 1) {
                 Matcher idm = Pattern.compile("\\b([A-Za-z_]\\w*)\\b").matcher(lines[i]);
                 while (idm.find()) {
                     String id = idm.group(1);
-                    // Skip string literals and known non-handler tokens
                     if (!id.equals("nil") && !id.equals("true") && !id.equals("false")
-                            && !id.equals("err") && !id.equals("ctx")) {
-                        lastIdent = id;
-                    }
+                            && !id.equals("err") && !id.equals("ctx")) lastIdent = id;
                 }
             }
         }

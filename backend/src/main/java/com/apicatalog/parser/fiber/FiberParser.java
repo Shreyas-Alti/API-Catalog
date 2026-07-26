@@ -71,15 +71,32 @@ public class FiberParser implements ParserPlugin {
         int depth = 0; boolean started = false;
         String lastIdent = null;
         for (int i = start; i < Math.min(start + 20, lines.length); i++) {
-            Matcher idm = Pattern.compile("\\b([A-Za-z_]\\w*)\\b").matcher(lines[i]);
-            while (idm.find()) {
-                String id = idm.group(1);
-                if (!id.equals("nil") && !id.equals("true") && !id.equals("false") && started && depth >= 1)
-                    lastIdent = id;
-            }
-            for (char c : lines[i].toCharArray()) {
+            for (int ci = 0; ci < lines[i].length(); ci++) {
+                char c = lines[i].charAt(ci);
                 if (c == '(') { started = true; depth++; }
-                else if (c == ')') { depth--; if (started && depth == 0) return lastIdent; }
+                else if (c == ')') {
+                    depth--;
+                    if (started && depth == 0) {
+                        // Capture identifiers up to the closing paren on this line
+                        Matcher idm = Pattern.compile("\\b([A-Za-z_]\\w*)\\b")
+                                .matcher(lines[i].substring(0, ci));
+                        while (idm.find()) {
+                            String id = idm.group(1);
+                            if (!id.equals("nil") && !id.equals("true") && !id.equals("false") && started && depth == 0)
+                                lastIdent = id;
+                        }
+                        return lastIdent;
+                    }
+                }
+            }
+            // Fully-interior line: capture all identifiers
+            if (started && depth >= 1) {
+                Matcher idm = Pattern.compile("\\b([A-Za-z_]\\w*)\\b").matcher(lines[i]);
+                while (idm.find()) {
+                    String id = idm.group(1);
+                    if (!id.equals("nil") && !id.equals("true") && !id.equals("false"))
+                        lastIdent = id;
+                }
             }
         }
         return lastIdent;
