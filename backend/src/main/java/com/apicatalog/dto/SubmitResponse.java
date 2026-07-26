@@ -13,9 +13,14 @@ public class SubmitResponse {
     private boolean supported;
     private List<ExtractedApi> apis;
     private String commitSha;
+    /** True when llm.enabled=true — surfaces AI-off state to the frontend. */
+    private boolean llmEnrichmentEnabled;
+    /** True when a host URL was provided — surfaces Test-Request-unavailable state. */
+    private boolean testRequestAvailable;
 
     public SubmitResponse(String name, String url, String hostUrl, String framework,
-                          boolean supported, List<ExtractedApi> apis, String commitSha) {
+                          boolean supported, List<ExtractedApi> apis, String commitSha,
+                          boolean llmEnrichmentEnabled, boolean testRequestAvailable) {
         this.name = name;
         this.url = url;
         this.hostUrl = hostUrl;
@@ -23,6 +28,8 @@ public class SubmitResponse {
         this.supported = supported;
         this.apis = apis;
         this.commitSha = commitSha;
+        this.llmEnrichmentEnabled = llmEnrichmentEnabled;
+        this.testRequestAvailable = testRequestAvailable;
     }
 
     public String getName() { return name; }
@@ -32,4 +39,6 @@ public class SubmitResponse {
     public boolean isSupported() { return supported; }
     public List<ExtractedApi> getApis() { return apis; }
     public String getCommitSha() { return commitSha; }
+    public boolean isLlmEnrichmentEnabled() { return llmEnrichmentEnabled; }
+    public boolean isTestRequestAvailable() { return testRequestAvailable; }
 }

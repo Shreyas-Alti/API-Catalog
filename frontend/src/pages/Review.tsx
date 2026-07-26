@@ -125,6 +125,12 @@ export default function Review() {
 
           {!result.supported && <div className="alert alert-warning">Framework &ldquo;{result.framework}&rdquo; is not yet supported.</div>}
           {result.supported && editedApis.length === 0 && <div className="alert alert-info">No endpoints found. The parser may not recognise the routing patterns used.</div>}
+          {result.supported && !result.llmEnrichmentEnabled && (
+            <div className="alert alert-info">AI descriptions are off &mdash; set <code>llm.enabled=true</code> and a valid API key to generate them.</div>
+          )}
+          {result.supported && editedApis.length > 0 && !result.testRequestAvailable && (
+            <div className="alert alert-info">No host URL set &mdash; Test Request won&rsquo;t be available for this repo after saving.</div>
+          )}
 
           {editedApis.length > 0 && (
             <div className="card">

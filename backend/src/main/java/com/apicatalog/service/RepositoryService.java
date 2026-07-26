@@ -4,6 +4,7 @@ import com.apicatalog.dto.*;
 import com.apicatalog.model.ApiEndpoint;
 import com.apicatalog.model.ExtractedApi;
 import com.apicatalog.model.Repository;
+import com.apicatalog.config.LlmProperties;
 import com.apicatalog.repository.RepositoryRepo;
 import com.apicatalog.service.mcp.McpToolRegistrationService;
 import org.springframework.http.HttpStatus;
@@ -21,17 +22,20 @@ public class RepositoryService {
     private final EndpointEnrichmentService     enrichmentService;
     private final RepositoryRepo                repositoryRepo;
     private final McpToolRegistrationService    mcpRegistration;
+    private final LlmProperties                 llmProperties;
 
     public RepositoryService(CloneService cloneService,
                              ExtractionService extractionService,
                              EndpointEnrichmentService enrichmentService,
                              RepositoryRepo repositoryRepo,
-                             McpToolRegistrationService mcpRegistration) {
+                             McpToolRegistrationService mcpRegistration,
+                             LlmProperties llmProperties) {
         this.cloneService       = cloneService;
         this.extractionService  = extractionService;
         this.enrichmentService  = enrichmentService;
         this.repositoryRepo     = repositoryRepo;
         this.mcpRegistration    = mcpRegistration;
+        this.llmProperties      = llmProperties;
     }
 
     // ── Submit: clone → detect → extract → enrich ────────────────────────────
@@ -54,7 +58,9 @@ public class RepositoryService {
             }
 
             return new SubmitResponse(repoName, request.getUrl(), request.getHostUrl(),
-                    framework, supported, apis, commitSha);
+                    framework, supported, apis, commitSha,
+                    llmProperties.isEnabled(),
+                    request.getHostUrl() != null && !request.getHostUrl().isBlank());
         } finally {
             if (cloneResult != null) cloneService.cleanup(cloneResult.path());
         }

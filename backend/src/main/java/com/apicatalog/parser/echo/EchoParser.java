@@ -11,14 +11,14 @@ import java.util.regex.*;
 
 /**
  * Parser for Echo (Go) projects.
- * Matches: e.GET("/path", handler), g.POST("/path", handler), etc.
+ * Handles both single-line and gofmt-wrapped multi-line route registrations.
  */
 @Component
 public class EchoParser implements ParserPlugin {
 
-    // Echo uses uppercase HTTP method names like Gin
+    // Match the start of a route call — handler resolved via paren-balancing below
     private static final Pattern ROUTE = Pattern.compile(
-            "^\\s*[\\w]+\\.(GET|POST|PUT|DELETE|PATCH)\\s*\\(\\s*\"([^\"]+)\"\\s*,\\s*(\\w+)?");
+            "^\\s*[\\w]+\\.(GET|POST|PUT|DELETE|PATCH)\\s*\\(\\s*\"([^\"]+)\"");
 
     @Override public String getFrameworkName() { return "Echo"; }
 
@@ -47,16 +47,37 @@ public class EchoParser implements ParserPlugin {
     }
 
     private List<ExtractedApi> parseFile(Path file) throws IOException {
+        String[] lines = Files.readAllLines(file).toArray(new String[0]);
         List<ExtractedApi> apis = new ArrayList<>();
-        for (String line : Files.readAllLines(file)) {
-            Matcher m = ROUTE.matcher(line);
+        for (int i = 0; i < lines.length; i++) {
+            Matcher m = ROUTE.matcher(lines[i]);
             if (!m.find()) continue;
             ExtractedApi api = new ExtractedApi();
             api.setMethod(m.group(1));
             api.setPath(m.group(2));
-            if (m.groupCount() >= 3) api.setHandler(m.group(3));
+            // Resolve handler from the full paren-balanced call (handles multi-line + multi-middleware)
+            api.setHandler(resolveLastArg(lines, i));
             apis.add(api);
         }
         return apis;
+    }
+
+    /** Walk forward until the route call's parens balance; return the last identifier seen. */
+    private String resolveLastArg(String[] lines, int start) {
+        int depth = 0; boolean started = false;
+        String lastIdent = null;
+        for (int i = start; i < Math.min(start + 20, lines.length); i++) {
+            Matcher idm = Pattern.compile("\\b([A-Za-z_]\\w*)\\b").matcher(lines[i]);
+            while (idm.find()) {
+                String id = idm.group(1);
+                if (!id.equals("nil") && !id.equals("true") && !id.equals("false") && started && depth >= 1)
+                    lastIdent = id;
+            }
+            for (char c : lines[i].toCharArray()) {
+                if (c == '(') { started = true; depth++; }
+                else if (c == ')') { depth--; if (started && depth == 0) return lastIdent; }
+            }
+        }
+        return lastIdent;
     }
 }

@@ -14,7 +14,8 @@ import java.util.regex.*;
 public class GinParser implements ParserPlugin {
 
     private static final Pattern ROUTE = Pattern.compile(
-        "^\\s*[\\w]+\\.(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\\s*\\(\\s*\"([^\"]+)\"\\s*,\\s*([\\w.]+)?");
+        "^\\s*[\\w]+\\.(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\\s*\\(\\s*\"([^\"]+)\"");
+    // ^^^ Handler no longer captured here — we resolve it from the full balanced call.
     private static final Pattern FUNC_DEF = Pattern.compile("^func\\s+(\\w+)\\s*\\(");
     private static final Pattern GIN_PARAM = Pattern.compile("c\\.Param\\s*\\(\\s*\"([^\"]+)\"");
     private static final Pattern GIN_QUERY = Pattern.compile("c\\.(?:Query|DefaultQuery|GetQuery)\\s*\\(\\s*\"([^\"]+)\"");
@@ -67,7 +68,11 @@ public class GinParser implements ParserPlugin {
         for (int i = 0; i < lines.length; i++) {
             Matcher m = ROUTE.matcher(lines[i]);
             if (!m.find()) continue;
-            String httpMethod = m.group(1); String path = m.group(2); String handlerRef = m.group(3);
+            String httpMethod = m.group(1);
+            String path = m.group(2);
+            // Collect the full paren-balanced call to find the last identifier
+            // (handles multi-line gofmt-wrapped calls and multi-middleware routes)
+            String handlerRef = resolveLastArg(lines, i);
             String handler = handlerRef;
             if (handler != null && handler.contains(".")) handler = handler.substring(handler.lastIndexOf('.') + 1);
             List<ApiParameter> params = new ArrayList<>();
@@ -104,6 +109,47 @@ public class GinParser implements ParserPlugin {
             apis.add(api);
         }
         return apis;
+    }
+
+    /**
+     * Collect the parenthesised argument list of a router.METHOD(...) call,
+     * walking forward across line breaks until parens balance, then return
+     * the last identifier — which is the handler (possibly after middleware).
+     */
+    private String resolveLastArg(String[] lines, int start) {
+        int depth = 0; boolean started = false;
+        String lastIdent = null;
+        for (int i = start; i < Math.min(start + 20, lines.length); i++) {
+            for (int ci = 0; ci < lines[i].length(); ci++) {
+                char c = lines[i].charAt(ci);
+                if (c == '(') { started = true; depth++; }
+                else if (c == ')') {
+                    depth--;
+                    if (started && depth == 0) return lastIdent;
+                }
+                // Track last word-character run we saw inside the parens
+                if (started && depth >= 1) {
+                    if (Character.isLetterOrDigit(c) || c == '_') {
+                        // still inside an identifier
+                    } else if (lastIdent == null || !Character.isLetterOrDigit(lines[i].charAt(Math.max(0, ci - 1)))) {
+                        // just ended an identifier — capture it
+                    }
+                }
+            }
+            // Extract identifiers from this line (while inside the call)
+            if (started && depth >= 1) {
+                Matcher idm = Pattern.compile("\\b([A-Za-z_]\\w*)\\b").matcher(lines[i]);
+                while (idm.find()) {
+                    String id = idm.group(1);
+                    // Skip string literals and known non-handler tokens
+                    if (!id.equals("nil") && !id.equals("true") && !id.equals("false")
+                            && !id.equals("err") && !id.equals("ctx")) {
+                        lastIdent = id;
+                    }
+                }
+            }
+        }
+        return lastIdent;
     }
 
     private List<ApiField> resolveStruct(String structName, Map<String, Path> structIndex) {

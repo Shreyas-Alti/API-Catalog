@@ -1,0 +1,79 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] -----------------------< com.apicatalog:backend >-----------------------
+[INFO] Building api-catalog 0.0.1-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] >>> spring-boot:4.1.0:run (default-cli) > test-compile @ backend >>>
+[INFO] 
+[INFO] --- resources:3.5.0:resources (default-resources) @ backend ---
+[INFO] Copying 1 resource from src\main\resources to target\classes
+[INFO] Copying 0 resource from src\main\resources to target\classes
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ backend ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.5.0:testResources (default-testResources) @ backend ---
+[INFO] skip non existing resourceDirectory C:\Users\shreyas.bairyks\Desktop\API Catalog\backend\src\test\resources
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ backend ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] <<< spring-boot:4.1.0:run (default-cli) < test-compile @ backend <<<
+[INFO] 
+[INFO] 
+[INFO] --- spring-boot:4.1.0:run (default-cli) @ backend ---
+[INFO] Attaching agents: []
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v4.1.0)
+
+2026-07-23T17:21:28.920+05:30  INFO 22252 --- [api-catalog] [  restartedMain] com.apicatalog.ApiCatalogApplication     : Starting ApiCatalogApplication using Java 25.0.2 with PID 22252 (C:\Users\shreyas.bairyks\Desktop\API Catalog\backend\target\classes started by shreyas.bairyks in C:\Users\shreyas.bairyks\Desktop\API Catalog\backend)
+2026-07-23T17:21:28.923+05:30 DEBUG 22252 --- [api-catalog] [  restartedMain] com.apicatalog.ApiCatalogApplication     : Running with Spring Boot v4.1.0, Spring v7.0.8
+2026-07-23T17:21:28.924+05:30  INFO 22252 --- [api-catalog] [  restartedMain] com.apicatalog.ApiCatalogApplication     : No active profile set, falling back to 1 default profile: "default"
+2026-07-23T17:21:28.962+05:30  INFO 22252 --- [api-catalog] [  restartedMain] .e.DevToolsPropertyDefaultsPostProcessor : Devtools property defaults active! Set 'spring.devtools.add-properties' to 'false' to disable
+2026-07-23T17:21:28.963+05:30  INFO 22252 --- [api-catalog] [  restartedMain] .e.DevToolsPropertyDefaultsPostProcessor : For additional web related logging consider setting the 'logging.level.web' property to 'DEBUG'
+2026-07-23T17:21:29.582+05:30  INFO 22252 --- [api-catalog] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-07-23T17:21:29.652+05:30  INFO 22252 --- [api-catalog] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 61 ms. Found 2 JPA repository interfaces.
+2026-07-23T17:21:30.168+05:30  INFO 22252 --- [api-catalog] [  restartedMain] o.s.boot.tomcat.TomcatWebServer          : Tomcat initialized with port 8080 (http)
+2026-07-23T17:21:30.181+05:30  INFO 22252 --- [api-catalog] [  restartedMain] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-07-23T17:21:30.182+05:30  INFO 22252 --- [api-catalog] [  restartedMain] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/11.0.22]
+2026-07-23T17:21:30.226+05:30  INFO 22252 --- [api-catalog] [  restartedMain] b.w.c.s.WebApplicationContextInitializer : Root WebApplicationContext: initialization completed in 1263 ms
+2026-07-23T17:21:30.357+05:30  INFO 22252 --- [api-catalog] [  restartedMain] org.hibernate.orm.jpa                    : HHH008540: Processing PersistenceUnitInfo [name: default]
+2026-07-23T17:21:30.396+05:30  INFO 22252 --- [api-catalog] [  restartedMain] org.hibernate.orm.core                   : HHH000001: Hibernate ORM core version 7.4.1.Final
+2026-07-23T17:21:30.724+05:30  INFO 22252 --- [api-catalog] [  restartedMain] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-07-23T17:21:30.749+05:30  INFO 22252 --- [api-catalog] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+2026-07-23T17:21:30.986+05:30  INFO 22252 --- [api-catalog] [  restartedMain] com.zaxxer.hikari.pool.HikariPool        : HikariPool-1 - Added connection org.postgresql.jdbc.PgConnection@1314088b
+2026-07-23T17:21:30.990+05:30  INFO 22252 --- [api-catalog] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+2026-07-23T17:21:31.014+05:30  WARN 22252 --- [api-catalog] [  restartedMain] org.hibernate.orm.deprecation            : HHH90000025: PostgreSQLDialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
+2026-07-23T17:21:31.033+05:30  INFO 22252 --- [api-catalog] [  restartedMain] org.hibernate.orm.connections.pooling    : HHH10001005: Database info:
+	Database JDBC URL [jdbc:postgresql://localhost:5432/api_catalog]
+	Database driver: PostgreSQL JDBC Driver
+	Database dialect: PostgreSQLDialect
+	Database version: 17.9
+	Default catalog/schema: api_catalog/public
+	Autocommit mode: undefined/unknown
+	Isolation level: READ_COMMITTED [default READ_COMMITTED]
+	JDBC fetch size: none
+	Pool: DataSourceConnectionProvider
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-07-23T17:21:31.863+05:30  INFO 22252 --- [api-catalog] [  restartedMain] org.hibernate.orm.core                   : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2026-07-23T17:21:32.026+05:30  INFO 22252 --- [api-catalog] [  restartedMain] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
+2026-07-23T17:21:32.094+05:30  INFO 22252 --- [api-catalog] [  restartedMain] o.s.d.j.r.query.QueryEnhancerFactories   : Hibernate is in classpath; If applicable, HQL parser will be used.
+2026-07-23T17:21:33.250+05:30  WARN 22252 --- [api-catalog] [  restartedMain] JpaBaseConfiguration$JpaWebConfiguration : spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
+2026-07-23T17:21:33.539+05:30  INFO 22252 --- [api-catalog] [  restartedMain] o.s.boot.tomcat.TomcatWebServer          : Tomcat started on port 8080 (http) with context path '/'
+2026-07-23T17:21:33.545+05:30  INFO 22252 --- [api-catalog] [  restartedMain] com.apicatalog.ApiCatalogApplication     : Started ApiCatalogApplication in 4.952 seconds (process running for 5.532)
+2026-07-23T17:21:33.727+05:30 DEBUG 22252 --- [api-catalog] [  restartedMain] c.a.s.mcp.McpToolRegistrationService     : MCP stub: registerForRepository(node-express-realworld-example-app) — no-op
+2026-07-23T17:21:33.729+05:30 DEBUG 22252 --- [api-catalog] [  restartedMain] c.a.s.mcp.McpToolRegistrationService     : MCP stub: registerForRepository(gigi-spring-rest-skeleton) — no-op
+2026-07-23T17:22:58.923+05:30  INFO 22252 --- [api-catalog] [nio-8080-exec-1] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-07-23T17:22:58.923+05:30  INFO 22252 --- [api-catalog] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+2026-07-23T17:22:58.938+05:30  INFO 22252 --- [api-catalog] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 15 ms
+2026-07-23T17:27:32.661+05:30  WARN 22252 --- [api-catalog] [nio-8080-exec-6] .w.s.m.a.ResponseStatusExceptionResolver : Resolved [org.springframework.web.server.ResponseStatusException: 404 NOT_FOUND "Repository not found: 40"]

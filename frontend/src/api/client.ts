@@ -49,6 +49,8 @@ export interface SubmitResponse {
   supported: boolean
   apis: ExtractedApi[]
   commitSha: string | null
+  llmEnrichmentEnabled: boolean
+  testRequestAvailable: boolean
 }
 
 export interface SaveRequest {

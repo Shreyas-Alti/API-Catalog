@@ -12,14 +12,14 @@ import java.util.regex.*;
 
 /**
  * Parser for Fiber (Go) projects.
- * Matches: app.Get("/path", handler), api.Post("/path", handler), etc.
+ * Handles both single-line and gofmt-wrapped multi-line route registrations.
  */
 @Component
 public class FiberParser implements ParserPlugin {
 
-    // app.Get("/path", handlerFunc) – title-cased HTTP methods
+    // Match the start of a route call — handler resolved via paren-balancing below
     private static final Pattern ROUTE = Pattern.compile(
-            "^\\s*[\\w]+\\.(Get|Post|Put|Delete|Patch|All)\\s*\\(\\s*\"([^\"]+)\"\\s*,\\s*(\\w+)?");
+            "^\\s*[\\w]+\\.(Get|Post|Put|Delete|Patch|All)\\s*\\(\\s*\"([^\"]+)\"");
 
     @Override
     public String getFrameworkName() { return "Fiber"; }
@@ -49,18 +49,39 @@ public class FiberParser implements ParserPlugin {
     }
 
     private List<ExtractedApi> parseFile(Path file) throws IOException {
+        String[] lines = Files.readAllLines(file).toArray(new String[0]);
         List<ExtractedApi> apis = new ArrayList<>();
-        for (String line : Files.readAllLines(file)) {
-            Matcher m = ROUTE.matcher(line);
+        for (int i = 0; i < lines.length; i++) {
+            Matcher m = ROUTE.matcher(lines[i]);
             if (!m.find()) continue;
             String verb = m.group(1);
-            if (verb.equals("All")) verb = "GET"; // Map .All() to GET as best-effort
+            if (verb.equals("All")) verb = "GET";
             ExtractedApi api = new ExtractedApi();
             api.setMethod(verb.toUpperCase());
             api.setPath(m.group(2));
-            if (m.groupCount() >= 3) api.setHandler(m.group(3));
+            // Resolve handler from the full paren-balanced call (handles multi-line + multi-middleware)
+            api.setHandler(resolveLastArg(lines, i));
             apis.add(api);
         }
         return apis;
+    }
+
+    /** Walk forward until the route call's parens balance; return the last identifier seen. */
+    private String resolveLastArg(String[] lines, int start) {
+        int depth = 0; boolean started = false;
+        String lastIdent = null;
+        for (int i = start; i < Math.min(start + 20, lines.length); i++) {
+            Matcher idm = Pattern.compile("\\b([A-Za-z_]\\w*)\\b").matcher(lines[i]);
+            while (idm.find()) {
+                String id = idm.group(1);
+                if (!id.equals("nil") && !id.equals("true") && !id.equals("false") && started && depth >= 1)
+                    lastIdent = id;
+            }
+            for (char c : lines[i].toCharArray()) {
+                if (c == '(') { started = true; depth++; }
+                else if (c == ')') { depth--; if (started && depth == 0) return lastIdent; }
+            }
+        }
+        return lastIdent;
     }
 }
