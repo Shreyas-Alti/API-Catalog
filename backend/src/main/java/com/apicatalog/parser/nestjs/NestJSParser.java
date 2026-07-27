@@ -90,7 +90,14 @@ public class NestJSParser implements ParserPlugin {
         List<String> pending = new ArrayList<>();
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i].trim();
-            if (line.startsWith("@")) { pending.add(line); continue; }
+            if (line.startsWith("@")) {
+                // Collect the full paren-balanced decorator (may span multiple lines)
+                // and advance i past whatever lines it consumed.
+                int[] consumed = {i};
+                pending.add(collectDecoratorBlock(lines, i, consumed));
+                i = consumed[0];
+                continue;
+            }
             if (line.isEmpty()) continue;
             if (!pending.isEmpty()) {
                 String httpMethod = null; String methodPath = null;
@@ -128,8 +135,32 @@ public class NestJSParser implements ParserPlugin {
         return apis;
     }
 
-    private String collectSig(String[] lines, int start) {
-        StringBuilder sb = new StringBuilder(); int d = 0; boolean open = false;
+    /**
+     * Collect a complete decorator as a single trimmed string, spanning as many
+     * lines as needed until its parentheses balance. For bare decorators with no
+     * parens (e.g. {@code @Public}) the first line is returned as-is.
+     * {@code outEndLine[0]} is set to the index of the last consumed line so the
+     * caller can advance the outer loop index accordingly.
+     */
+    private String collectDecoratorBlock(String[] lines, int start, int[] outEndLine) {
+        StringBuilder sb = new StringBuilder();
+        int depth = 0; boolean opened = false;
+        for (int i = start; i < Math.min(start + 15, lines.length); i++) {
+            sb.append(lines[i].trim()).append(" ");
+            for (char c : lines[i].toCharArray()) {
+                if (c == '(') { opened = true; depth++; }
+                else if (c == ')') {
+                    depth--;
+                    if (opened && depth == 0) { outEndLine[0] = i; return sb.toString().trim(); }
+                }
+            }
+            if (!opened) { outEndLine[0] = i; return sb.toString().trim(); } // bare decorator, no parens
+        }
+        outEndLine[0] = start;
+        return sb.toString().trim();
+    }
+
+    private String collectSig(String[] lines, int start) {        StringBuilder sb = new StringBuilder(); int d = 0; boolean open = false;
         for (int i = start; i < Math.min(start + 12, lines.length); i++) {
             String l = lines[i].trim();
             if (l.startsWith("//") || l.startsWith("/*")) continue; // skip comment lines only

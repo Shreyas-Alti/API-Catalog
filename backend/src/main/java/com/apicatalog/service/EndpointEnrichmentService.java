@@ -13,6 +13,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -72,6 +74,9 @@ public class EndpointEnrichmentService {
     public void enrich(List<ExtractedApi> apis, Path repoRoot, String repoName) {
         if (!llmProperties.isEnabled() || apis == null || apis.isEmpty()) return;
 
+        // Read README once for the whole repo — gives the LLM business context
+        String readmeSnippet = readReadmeSnippet(repoRoot);
+
         // Build type index once for the whole repo
         Map<String, Path> typeIndex = typeIndexBuilder.build(repoRoot);
 
@@ -96,7 +101,7 @@ public class EndpointEnrichmentService {
 
             try {
                 Path absFile = repoRoot.resolve(relPath.replace('/', java.io.File.separatorChar));
-                String prompt = buildPrompt(toEnrich, absFile, repoRoot, repoName, typeIndex);
+                String prompt = buildPrompt(toEnrich, absFile, repoRoot, repoName, typeIndex, readmeSnippet);
                 log.debug("Enriching {} endpoint(s) in {}", toEnrich.size(), relPath);
 
                 String response = llmClient.complete(SYSTEM_PROMPT, prompt);
@@ -111,9 +116,16 @@ public class EndpointEnrichmentService {
     // ── Prompt construction ────────────────────────────────────
 
     private String buildPrompt(List<IndexedApi> items, Path absFile, Path repoRoot,
-                                String repoName, Map<String, Path> typeIndex) {
+                                String repoName, Map<String, Path> typeIndex,
+                                String readmeSnippet) {
         StringBuilder sb = new StringBuilder();
-        sb.append("Repository: ").append(repoName).append("\n\n");
+        sb.append("Repository: ").append(repoName).append("\n");
+        // Prepend README once — gives the LLM project intent without per-file overhead
+        if (readmeSnippet != null && !readmeSnippet.isBlank()) {
+            sb.append("\nRepository README (use only to inform tone and framing; never invent facts not in the code):\n");
+            sb.append(readmeSnippet).append("\n");
+        }
+        sb.append("\n");
 
         for (IndexedApi item : items) {
             ExtractedApi api = item.api;
@@ -195,6 +207,26 @@ public class EndpointEnrichmentService {
     // ── Response merging ───────────────────────────────────────
 
     @SuppressWarnings("unchecked")
+    // ── README context ──────────────────────────────────────────────────────
+
+    /**
+     * Read up to 2000 chars from the repository's README file.
+     * Enough to capture the purpose/intro section without meaningfully
+     * growing prompt token cost. Returns {@code null} when no README exists.
+     */
+    private String readReadmeSnippet(Path repoRoot) {
+        for (String name : List.of("README.md", "readme.md", "Readme.md", "README.txt", "README")) {
+            Path p = repoRoot.resolve(name);
+            if (Files.exists(p)) {
+                try {
+                    String content = Files.readString(p);
+                    return content.length() > 2000 ? content.substring(0, 2000) : content;
+                } catch (IOException ignored) {}
+            }
+        }
+        return null;
+    }
+
     private void mergeResponse(String json, List<IndexedApi> items, List<ExtractedApi> allApis) {
         List<Map<String, Object>> results;
         try {
