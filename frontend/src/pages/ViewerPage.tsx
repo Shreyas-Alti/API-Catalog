@@ -7,26 +7,6 @@ import Breadcrumbs from '../components/Breadcrumbs'
 
 const BACKEND = 'http://localhost:8080'
 
-// Hide Scalar's built-in dark/light toggle — our navbar toggle handles theme globally.
-// Targets the known class name plus every plausible fallback selector.
-const HIDE_SCALAR_TOGGLE = `
-  .dark-light-toggle,
-  .scalar-button.dark-light-toggle,
-  .references-navigation .dark-light-toggle,
-  button[title="Toggle dark mode"],
-  button[title="Toggle light mode"],
-  button[title="Switch to dark mode"],
-  button[title="Switch to light mode"],
-  button[aria-label="Toggle dark mode"],
-  button[aria-label="Toggle light mode"],
-  button[aria-label="Switch to dark mode"],
-  button[aria-label="Switch to light mode"],
-  [data-testid="dark-mode-toggle"],
-  [class*="DarkLight"],
-  [class*="ThemeToggle"],
-  [class*="ColorMode"] { display: none !important; }
-`
-
 export default function ViewerPage() {
   const { id } = useParams<{ id: string }>()
   const [repoName, setRepoName] = useState<string | null>(null)
@@ -66,16 +46,16 @@ export default function ViewerPage() {
         <Breadcrumbs repoName={repoName ?? `Repository #${id}`} />
       </div>
 
-      {/* Scalar — remounted on theme change (key) so darkMode prop is always applied fresh */}
+      {/* Scalar — theme continuously enforced via forceDarkModeState, toggle hidden via hideDarkModeToggle */}
       <div style={{ flex: 1, overflow: 'auto' }}>
         <ApiReferenceReact
           key={String(isDark)}
           configuration={{
             url: `${BACKEND}/api/repositories/${id}/openapi.json`,
-            darkMode: isDark,
+            forceDarkModeState: isDark ? 'dark' : 'light',
+            hideDarkModeToggle: true,
             hideDownloadButton: false,
             showSidebar: true,
-            customCss: HIDE_SCALAR_TOGGLE,
           }}
         />
       </div>
