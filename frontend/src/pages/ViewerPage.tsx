@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { ApiReferenceReact } from '@scalar/api-reference-react'
 import '@scalar/api-reference-react/style.css'
 import { getRepository } from '../api/client'
@@ -7,10 +7,33 @@ import Breadcrumbs from '../components/Breadcrumbs'
 
 const BACKEND = 'http://localhost:8080'
 
+// Hide Scalar's built-in dark/light toggle — our navbar toggle handles theme globally.
+// Targets the known class name plus every plausible fallback selector.
+const HIDE_SCALAR_TOGGLE = `
+  .dark-light-toggle,
+  .scalar-button.dark-light-toggle,
+  .references-navigation .dark-light-toggle,
+  button[title="Toggle dark mode"],
+  button[title="Toggle light mode"],
+  button[title="Switch to dark mode"],
+  button[title="Switch to light mode"],
+  button[aria-label="Toggle dark mode"],
+  button[aria-label="Toggle light mode"],
+  button[aria-label="Switch to dark mode"],
+  button[aria-label="Switch to light mode"],
+  [data-testid="dark-mode-toggle"],
+  [class*="DarkLight"],
+  [class*="ThemeToggle"],
+  [class*="ColorMode"] { display: none !important; }
+`
+
 export default function ViewerPage() {
-  const { id }   = useParams<{ id: string }>()
-  const navigate = useNavigate()
+  const { id } = useParams<{ id: string }>()
   const [repoName, setRepoName] = useState<string | null>(null)
+  // Mirror our app's theme so Scalar re-renders in the correct mode
+  const [isDark, setIsDark] = useState(
+    !document.documentElement.classList.contains('light')
+  )
 
   useEffect(() => {
     if (!id) return
@@ -18,6 +41,15 @@ export default function ViewerPage() {
       .then(r => setRepoName(r.name))
       .catch(() => setRepoName(null))
   }, [id])
+
+  // Watch for theme class changes driven by our navbar toggle
+  useEffect(() => {
+    const obs = new MutationObserver(() => {
+      setIsDark(!document.documentElement.classList.contains('light'))
+    })
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+    return () => obs.disconnect()
+  }, [])
 
   if (!id) return null
 
@@ -34,14 +66,16 @@ export default function ViewerPage() {
         <Breadcrumbs repoName={repoName ?? `Repository #${id}`} />
       </div>
 
-      {/* Scalar — uses its own default theme which already matches our dark palette */}
+      {/* Scalar — remounted on theme change (key) so darkMode prop is always applied fresh */}
       <div style={{ flex: 1, overflow: 'auto' }}>
         <ApiReferenceReact
+          key={String(isDark)}
           configuration={{
             url: `${BACKEND}/api/repositories/${id}/openapi.json`,
-            darkMode: true,
+            darkMode: isDark,
             hideDownloadButton: false,
             showSidebar: true,
+            customCss: HIDE_SCALAR_TOGGLE,
           }}
         />
       </div>
