@@ -1,240 +1,199 @@
-import { useState, useEffect } from 'react'
-import type { FormEvent } from 'react'
-import { submitRepository, saveRepository } from '../api/client'
+import { useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { saveRepository } from '../api/client'
 import type { SubmitResponse, ExtractedApi } from '../api/client'
+import Breadcrumbs from '../components/Breadcrumbs'
 
-const METHODS = ['GET','POST','PUT','DELETE','PATCH']
+const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
 const METHOD_COLORS: Record<string, string> = {
   GET: '#22c55e', POST: '#2563eb', PUT: '#f59e0b', DELETE: '#ef4444', PATCH: '#8b5cf6',
 }
 
+function MethodBadge({ method }: { method: string }) {
+  return (
+    <span className="method-badge" style={{ background: METHOD_COLORS[method] ?? '#64748b' }}>
+      {method}
+    </span>
+  )
+}
+
+function StatusChip({ ep }: { ep: ExtractedApi }) {
+  if (ep.manuallyEdited) return <span className="chip chip-green">Reviewed</span>
+  if (ep.needsReview)    return <span className="chip chip-yellow">Needs Review</span>
+  if (ep.aiGenerated)    return <span className="chip chip-gray">AI Generated</span>
+  return null
+}
+
+function rowClass(ep: ExtractedApi) {
+  if (ep.manuallyEdited) return 'row-reviewed'
+  if (ep.needsReview)    return 'row-needs-review'
+  return 'row-ai-generated'
+}
+
 export default function Review() {
-  const [url, setUrl] = useState('')
-  const [hostUrl, setHostUrl] = useState('')
-  const [projectName, setProjectName] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [savedId, setSavedId] = useState<number | null>(null)
-  const [result, setResult] = useState<SubmitResponse | null>(null)
-  const [commitSha, setCommitSha] = useState<string | null>(null)
-  const [editedApis, setEditedApis] = useState<ExtractedApi[]>([])
+  const location = useLocation()
+  const navigate = useNavigate()
+  const result = (location.state as { result?: SubmitResponse } | null)?.result
+
+  const [apis, setApis] = useState<ExtractedApi[]>(() => result?.apis.map(a => ({ ...a })) ?? [])
   const [editingIdx, setEditingIdx] = useState<number | null>(null)
   const [buf, setBuf] = useState<ExtractedApi | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (result) setEditedApis(result.apis.map(a => ({ ...a })))
-  }, [result])
-
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
-    setError(null)
-    setResult(null)
-    setSavedId(null)
-    try {
-      const data = await submitRepository(url, hostUrl || null)
-      setResult(data)
-      setCommitSha(data.commitSha ?? null)
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Unknown error')
-    } finally {
-      setLoading(false)
-    }
+  if (!result) {
+    return (
+      <div className="page">
+        <div className="alert alert-warning">
+          No extraction result. <a href="/" onClick={e => { e.preventDefault(); navigate('/') }}>Go to Catalog →</a>
+        </div>
+      </div>
+    )
   }
 
-  const startEdit = (i: number) => { setEditingIdx(i); setBuf({ ...editedApis[i] }) }
+  const startEdit = (i: number) => { setEditingIdx(i); setBuf({ ...apis[i] }) }
   const cancelEdit = () => { setEditingIdx(null); setBuf(null) }
   const applyEdit = () => {
     if (editingIdx === null || !buf) return
-    const updated = [...editedApis]
-    updated[editingIdx] = buf
-    setEditedApis(updated)
+    const updated = [...apis]
+    updated[editingIdx] = { ...buf, manuallyEdited: true }
+    setApis(updated)
     setEditingIdx(null)
     setBuf(null)
   }
   const deleteRow = (i: number) => {
-    setEditedApis(editedApis.filter((_, idx) => idx !== i))
-    if (editingIdx === i) { setEditingIdx(null); setBuf(null) }
+    setApis(prev => prev.filter((_, idx) => idx !== i))
+    if (editingIdx === i) cancelEdit()
+    else if (editingIdx !== null && editingIdx > i) setEditingIdx(editingIdx - 1)
   }
 
-  const handleSave = async () => {
-    if (!result) return
+  const field = (key: keyof ExtractedApi) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+      setBuf(prev => prev ? { ...prev, [key]: e.target.value || null } : prev)
+
+  const handlePublish = async () => {
     setSaving(true)
     setError(null)
     try {
-      const effectiveName = projectName.trim() || result.name
-      const saved = await saveRepository({ url: result.url, hostUrl: result.hostUrl, name: effectiveName, framework: result.framework, apis: editedApis, commitSha })
-      setSavedId(saved.id)
+      const saved = await saveRepository({
+        url: result.url,
+        hostUrl: result.hostUrl,
+        name: result.name,
+        framework: result.framework,
+        apis,
+        commitSha: result.commitSha ?? null,
+      })
+      navigate(`/repositories/${saved.id}`)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Save failed')
-    } finally {
       setSaving(false)
     }
   }
 
-  const field = (key: keyof ExtractedApi) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
-    setBuf(prev => prev ? { ...prev, [key]: e.target.value || null } : prev)
-
   return (
     <div className="page">
-      <h1>Submit Repository</h1>
-      <p className="subtitle">Enter a public Git repository URL to clone, detect its framework, and extract API endpoints.</p>
+      <Breadcrumbs repoName={result.name} step="Review" />
 
-      <form className="card" onSubmit={handleSubmit}>
-        <div className="form-group">
-          <label htmlFor="projectName">Project Name <span className="optional-label">(optional — defaults to repo name)</span></label>
-          <input id="projectName" type="text" className="input" placeholder="My API"
-            value={projectName} onChange={e => setProjectName(e.target.value)} disabled={loading} />
+      <div className="page-header">
+        <div>
+          <h1>{result.name}</h1>
+          <p className="subtitle" style={{ marginBottom: 0 }}>
+            {apis.length} endpoint{apis.length !== 1 ? 's' : ''} &mdash; {result.framework}
+          </p>
         </div>
-        <div className="form-group">
-          <label htmlFor="hostUrl">API Base URL <span className="optional-label">(optional — where this API is deployed)</span></label>
-          <input id="hostUrl" type="url" className="input" placeholder="https://api.myapp.com"
-            value={hostUrl} onChange={e => setHostUrl(e.target.value)} disabled={loading} />
-        </div>
-        <div className="form-group">
-          <label htmlFor="url">Repository URL</label>
-          <input id="url" type="url" className="input" placeholder="https://github.com/owner/repo"
-            value={url} onChange={e => setUrl(e.target.value)} required disabled={loading} />
-        </div>
-        <button type="submit" className="btn btn-primary" disabled={loading || !url}>
-          {loading ? 'Cloning & extracting…' : 'Extract APIs'}
+        <button
+          className="btn btn-primary btn-lg"
+          onClick={handlePublish}
+          disabled={saving || apis.length === 0}
+        >
+          {saving ? 'Publishing…' : 'Publish documentation'}
         </button>
-      </form>
+      </div>
 
       {error && <div className="alert alert-error">{error}</div>}
-      {savedId && <div className="alert alert-success">Saved! <a href="/catalog">View in Catalog →</a></div>}
 
-      {result && (
-        <>
-          <div className="card result-meta-card">
-            <div className="result-meta">
-              <div>
-                <h2>{projectName.trim() || result.name}</h2>
-                <a href={result.url} target="_blank" rel="noopener noreferrer" className="url-link">{result.url}</a>
-                {result.hostUrl && (
-                  <div className="host-url-row">
-                    <span className="host-label">API Base URL:</span>
-                    <a href={result.hostUrl} target="_blank" rel="noopener noreferrer" className="url-link">{result.hostUrl}</a>
-                  </div>
-                )}
-              </div>
-              <span className={`badge ${result.supported ? 'badge-green' : 'badge-yellow'}`}>{result.framework}</span>
-            </div>
-          </div>
-
-          {!result.supported && <div className="alert alert-warning">Framework &ldquo;{result.framework}&rdquo; is not yet supported.</div>}
-          {result.supported && editedApis.length === 0 && <div className="alert alert-info">No endpoints found. The parser may not recognise the routing patterns used.</div>}
-          {result.supported && !result.llmEnrichmentEnabled && (
-            <div className="alert alert-info">AI descriptions are off &mdash; set <code>llm.enabled=true</code> and a valid API key to generate them.</div>
-          )}
-          {result.supported && editedApis.length > 0 && !result.testRequestAvailable && (
-            <div className="alert alert-info">No host URL set &mdash; Test Request won&rsquo;t be available for this repo after saving.</div>
-          )}
-
-          {editedApis.length > 0 && (
-            <div className="card">
-              <div className="table-header">
-                <h2>{editedApis.length} endpoint{editedApis.length !== 1 ? 's' : ''}</h2>
-                <button className="btn btn-primary" onClick={handleSave} disabled={saving || !!savedId}>
-                  {saving ? 'Saving…' : savedId ? 'Saved ✓' : 'Save to Catalog'}
-                </button>
-              </div>
-              <table className="api-table">
-                <thead>
-                  <tr><th>Method</th><th>Path</th><th>Controller</th><th>Handler</th><th>Actions</th></tr>
-                </thead>
-                <tbody>
-                  {editedApis.map((api, i) => (
-                    editingIdx === i && buf ? (
-                      <>
-                        <tr key={i} className="editing-row">
-                          <td>
-                            <select className="input-sm" value={buf.method} onChange={field('method')}>
-                              {METHODS.map(m => <option key={m}>{m}</option>)}
-                            </select>
-                          </td>
-                          <td><input className="input-sm mono" value={buf.path ?? ''} onChange={field('path')} /></td>
-                          <td><input className="input-sm" value={buf.controller ?? ''} onChange={field('controller')} /></td>
-                          <td><input className="input-sm" value={buf.handler ?? ''} onChange={field('handler')} /></td>
-                          <td className="action-cell">
-                            <button className="btn-xs btn-green" onClick={applyEdit}>Apply</button>
-                            <button className="btn-xs btn-gray" onClick={cancelEdit}>Cancel</button>
-                          </td>
-                        </tr>
-                        <tr key={`${i}-extra`} className="editing-extra">
-                          <td colSpan={5}>
-                            {/* ── From Source ────────────────────────── */}
-                            <div className="edit-section edit-section--source">
-                              <div className="edit-section-title">📦 From Source Code</div>
-                              <div className="edit-extra-grid">
-                                <div className="form-group-sm"><label>Description</label>
-                                  <textarea className="input-sm" rows={2} value={buf.description ?? ''} onChange={field('description')} /></div>
-                                <div className="form-group-sm"><label>Request Body Type</label>
-                                  <input className="input-sm" value={buf.requestBodyType ?? ''} onChange={field('requestBodyType')} /></div>
-                                <div className="form-group-sm"><label>Response Body Type</label>
-                                  <input className="input-sm" value={buf.responseBodyType ?? ''} onChange={field('responseBodyType')} /></div>
-                              </div>
-                            </div>
-                            {/* ── AI-Generated ────────────────────────── */}
-                            <div className="edit-section edit-section--ai">
-                              <div className="edit-section-title">
-                                🤖 AI-Generated
-                                {buf.aiGenerated && buf.needsReview && (
-                                  <span className="badge-ai-review">Needs Review</span>
-                                )}
-                                {buf.llmModel && (
-                                  <span className="ai-model-label">{buf.llmModel}</span>
-                                )}
-                              </div>
-                              <div className="edit-extra-grid">
-                                <div className="form-group-sm"><label>Summary</label>
-                                  <input className="input-sm" value={buf.summary ?? ''}
-                                    onChange={e => setBuf(p => p ? { ...p, summary: e.target.value || null, manuallyEdited: true } : p)} /></div>
-                                <div className="form-group-sm"><label>Tags (comma-separated)</label>
-                                  <input className="input-sm"
-                                    value={buf.tags?.join(', ') ?? ''}
-                                    onChange={e => setBuf(p => p ? {
-                                      ...p,
-                                      tags: e.target.value.split(',').map(t => t.trim()).filter(Boolean),
-                                      manuallyEdited: true
-                                    } : p)} /></div>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      </>
-                    ) : (
-                      <>
-                        <tr key={i}>
-                          <td><span className="method-badge" style={{ background: METHOD_COLORS[api.method] ?? '#64748b' }}>{api.method}</span></td>
-                          <td>
-                            <span className="mono">{api.path}</span>
-                            {(api.summary || api.description) && (
-                              <div className="endpoint-label">
-                                {api.summary || api.description}
-                                {api.aiGenerated && api.needsReview && (
-                                  <span className="badge-ai-review" style={{ marginLeft: '0.4rem' }}>🤖 Review</span>
-                                )}
-                              </div>
-                            )}
-                          </td>
-                          <td>{api.controller ?? '—'}</td>
-                          <td>{api.handler ?? '—'}</td>
-                          <td className="action-cell">
-                            <button className="btn-xs btn-gray" onClick={() => startEdit(i)}>Edit</button>
-                            <button className="btn-xs btn-red" onClick={() => deleteRow(i)}>✕</button>
-                          </td>
-                        </tr>
-                      </>
-                    )
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </>
-      )}
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        <table className="review-table">
+          <thead>
+            <tr>
+              <th style={{ width: '38%' }}>Endpoint</th>
+              <th>Summary / Description</th>
+              <th style={{ width: '120px' }}>Status</th>
+              <th style={{ width: '60px' }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {apis.map((ep, i) =>
+              editingIdx === i && buf ? (
+                <tr key={i} className="editing-row" style={{ cursor: 'default' }}>
+                  <td colSpan={4}>
+                    <div style={{ padding: '0.65rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <select
+                          className="input-sm"
+                          style={{ width: 90, flexShrink: 0 }}
+                          value={buf.method}
+                          onChange={field('method')}
+                        >
+                          {METHODS.map(m => <option key={m}>{m}</option>)}
+                        </select>
+                        <input
+                          className="input-sm mono"
+                          style={{ flex: 1 }}
+                          value={buf.path ?? ''}
+                          onChange={field('path')}
+                          placeholder="/path"
+                        />
+                      </div>
+                      <input
+                        className="input-sm"
+                        value={buf.summary ?? ''}
+                        onChange={field('summary')}
+                        placeholder="Summary (2–5 words, action-oriented)"
+                      />
+                      <textarea
+                        className="input-sm"
+                        value={buf.description ?? ''}
+                        onChange={field('description')}
+                        placeholder="Description (1–2 sentences)"
+                        rows={2}
+                        style={{ resize: 'vertical' }}
+                      />
+                      <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'flex-end' }}>
+                        <button className="btn-xs btn-red" onClick={() => deleteRow(i)}>Delete</button>
+                        <button className="btn-xs btn-gray" onClick={cancelEdit}>Cancel</button>
+                        <button className="btn-xs btn-green" onClick={applyEdit}>Apply</button>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={i} className={rowClass(ep)} onClick={() => startEdit(i)}>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <MethodBadge method={ep.method} />
+                      <span className="mono" style={{ fontSize: '0.88rem' }}>{ep.path}</span>
+                    </div>
+                  </td>
+                  <td style={{ color: 'var(--text-secondary)', fontSize: '0.88rem' }}>
+                    {ep.summary || ep.description || <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                  </td>
+                  <td><StatusChip ep={ep} /></td>
+                  <td>
+                    <button
+                      className="btn-xs btn-gray"
+                      onClick={e => { e.stopPropagation(); startEdit(i) }}
+                    >
+                      Edit
+                    </button>
+                  </td>
+                </tr>
+              )
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
+

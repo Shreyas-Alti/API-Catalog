@@ -51,6 +51,7 @@ export interface SubmitResponse {
   commitSha: string | null
   llmEnrichmentEnabled: boolean
   testRequestAvailable: boolean
+  groups: string[]
 }
 
 export interface SaveRequest {

@@ -13,6 +13,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 public class RepositoryService {
@@ -57,10 +59,22 @@ public class RepositoryService {
                 enrichmentService.enrich(apis, tempDir, repoName);
             }
 
+            // Groups: distinct tags (or controller name) for the extraction report
+            List<String> groups = apis.stream()
+                    .flatMap(api -> {
+                        if (api.getTags() != null && !api.getTags().isEmpty())
+                            return api.getTags().stream();
+                        if (api.getController() != null)
+                            return Stream.of(api.getController());
+                        return Stream.empty();
+                    })
+                    .distinct().sorted().collect(Collectors.toList());
+
             return new SubmitResponse(repoName, request.getUrl(), request.getHostUrl(),
                     framework, supported, apis, commitSha,
                     llmProperties.isEnabled(),
-                    request.getHostUrl() != null && !request.getHostUrl().isBlank());
+                    request.getHostUrl() != null && !request.getHostUrl().isBlank(),
+                    groups);
         } finally {
             if (cloneResult != null) cloneService.cleanup(cloneResult.path());
         }

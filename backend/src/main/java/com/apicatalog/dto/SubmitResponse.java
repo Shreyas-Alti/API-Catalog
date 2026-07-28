@@ -17,10 +17,13 @@ public class SubmitResponse {
     private boolean llmEnrichmentEnabled;
     /** True when a host URL was provided — surfaces Test-Request-unavailable state. */
     private boolean testRequestAvailable;
+    /** Distinct API groups (tags or controller names) across the extraction run. */
+    private List<String> groups;
 
     public SubmitResponse(String name, String url, String hostUrl, String framework,
                           boolean supported, List<ExtractedApi> apis, String commitSha,
-                          boolean llmEnrichmentEnabled, boolean testRequestAvailable) {
+                          boolean llmEnrichmentEnabled, boolean testRequestAvailable,
+                          List<String> groups) {
         this.name = name;
         this.url = url;
         this.hostUrl = hostUrl;
@@ -30,6 +33,7 @@ public class SubmitResponse {
         this.commitSha = commitSha;
         this.llmEnrichmentEnabled = llmEnrichmentEnabled;
         this.testRequestAvailable = testRequestAvailable;
+        this.groups = groups;
     }
 
     public String getName() { return name; }
@@ -41,4 +45,5 @@ public class SubmitResponse {
     public String getCommitSha() { return commitSha; }
     public boolean isLlmEnrichmentEnabled() { return llmEnrichmentEnabled; }
     public boolean isTestRequestAvailable() { return testRequestAvailable; }
+    public List<String> getGroups() { return groups; }
 }
