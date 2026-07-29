@@ -13,6 +13,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -25,19 +26,22 @@ public class RepositoryService {
     private final RepositoryRepo                repositoryRepo;
     private final McpToolRegistrationService    mcpRegistration;
     private final LlmProperties                 llmProperties;
+    private final ExistingSpecImportService     specImportService;
 
     public RepositoryService(CloneService cloneService,
                              ExtractionService extractionService,
                              EndpointEnrichmentService enrichmentService,
                              RepositoryRepo repositoryRepo,
                              McpToolRegistrationService mcpRegistration,
-                             LlmProperties llmProperties) {
+                             LlmProperties llmProperties,
+                             ExistingSpecImportService specImportService) {
         this.cloneService       = cloneService;
         this.extractionService  = extractionService;
         this.enrichmentService  = enrichmentService;
         this.repositoryRepo     = repositoryRepo;
         this.mcpRegistration    = mcpRegistration;
         this.llmProperties      = llmProperties;
+        this.specImportService  = specImportService;
     }
 
     // ── Submit: clone → detect → extract → enrich ────────────────────────────
@@ -50,16 +54,32 @@ public class RepositoryService {
             Path tempDir  = cloneResult.path();
             String commitSha = cloneResult.commitSha();
 
-            String framework = extractionService.detectFramework(tempDir);
-            boolean supported = !"Unsupported".equals(framework);
-            List<ExtractedApi> apis = supported ? extractionService.extract(tempDir) : List.of();
+            // ── Try importing a committed OpenAPI spec first ──────────────────
+            Optional<List<ExtractedApi>> imported = specImportService.tryImport(tempDir);
 
-            // LLM enrichment (no-op if llm.enabled = false)
-            if (!apis.isEmpty()) {
-                enrichmentService.enrich(apis, tempDir, repoName);
+            List<ExtractedApi> apis;
+            String framework;
+            boolean fromImportedSpec;
+
+            if (imported.isPresent()) {
+                apis             = imported.get();
+                framework        = "OpenAPI (imported)";
+                fromImportedSpec = true;
+                // Skip enrichment — every imported endpoint already has a description,
+                // so EndpointEnrichmentService would no-op anyway; skip explicitly for clarity.
+            } else {
+                // ── Standard path: detect framework → extract → enrich ────────
+                framework = extractionService.detectFramework(tempDir);
+                boolean supported = !"Unsupported".equals(framework);
+                apis = supported ? extractionService.extract(tempDir) : List.of();
+                fromImportedSpec = false;
+
+                if (!apis.isEmpty()) {
+                    enrichmentService.enrich(apis, tempDir, repoName);
+                }
             }
 
-            // Groups: distinct tags (or controller name) for the extraction report
+            // Groups for the extraction report
             List<String> groups = apis.stream()
                     .flatMap(api -> {
                         if (api.getTags() != null && !api.getTags().isEmpty())
@@ -71,10 +91,10 @@ public class RepositoryService {
                     .distinct().sorted().collect(Collectors.toList());
 
             return new SubmitResponse(repoName, request.getUrl(), request.getHostUrl(),
-                    framework, supported, apis, commitSha,
+                    framework, true, apis, commitSha,
                     llmProperties.isEnabled(),
                     request.getHostUrl() != null && !request.getHostUrl().isBlank(),
-                    groups);
+                    groups, fromImportedSpec);
         } finally {
             if (cloneResult != null) cloneService.cleanup(cloneResult.path());
         }
@@ -91,6 +111,8 @@ public class RepositoryService {
         repo.setCommitSha(request.getCommitSha());
         repo.setOpenapiDirty(true);
         populateEndpoints(repo, request.getApis());
+        // Repo-level AI enrichment (intro description + tag descriptions)
+        enrichmentService.enrichRepoLevel(repo, request.getApis());
         Repository saved = repositoryRepo.save(repo);
         mcpRegistration.registerForRepository(saved);
         return toDetailDto(saved);
@@ -120,6 +142,8 @@ public class RepositoryService {
             repo.setCommitSha(cloneResult.commitSha());
             repo.setOpenapiDirty(true);
             populateEndpoints(repo, apis);
+            // Repo-level AI enrichment (intro description + tag descriptions)
+            enrichmentService.enrichRepoLevel(repo, apis);
             Repository saved = repositoryRepo.save(repo);
             mcpRegistration.registerForRepository(saved);
             return toDetailDto(saved);

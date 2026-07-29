@@ -5,6 +5,7 @@ import com.apicatalog.model.ApiField;
 import com.apicatalog.model.ApiParameter;
 import com.apicatalog.model.Repository;
 import com.apicatalog.repository.RepositoryRepo;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.parser.OpenAPIV3Parser;
 import io.swagger.v3.parser.core.models.SwaggerParseResult;
@@ -79,7 +80,15 @@ public class OpenApiGeneratorService {
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("title", repo.getName());
         info.put("version", "1.0.0");
+        // AI-generated intro description
+        if (repo.getApiDescription() != null && !repo.getApiDescription().isBlank()) {
+            info.put("description", repo.getApiDescription());
+        }
         doc.put("info", info);
+
+        // Top-level tags with AI-generated descriptions (drives Scalar's sidebar sections)
+        List<Map<String, Object>> tagList = buildTagList(repo);
+        if (!tagList.isEmpty()) doc.put("tags", tagList);
 
         if (repo.getHostUrl() != null && !repo.getHostUrl().isBlank()) {
             List<Map<String, Object>> servers = new ArrayList<>();
@@ -90,18 +99,22 @@ public class OpenApiGeneratorService {
             doc.put("servers", servers);
         }
 
-        // Collect distinct schema types
-        Set<String> schemaNames = new LinkedHashSet<>();
+        // Collect distinct complex (non-primitive) schema types, with sanitised names
+        Map<String, String> rawToSanitized = new LinkedHashMap<>(); // rawTypeName → sanitizedKey
+        for (ApiEndpoint ep : repo.getEndpoints()) {
+            for (String raw : new String[]{ ep.getRequestBodyType(), ep.getResponseBodyType() }) {
+                if (raw != null && !rawToSanitized.containsKey(raw) && !isPrimitive(raw)) {
+                    rawToSanitized.put(raw, sanitizeSchemaName(raw));
+                }
+            }
+        }
+        Set<String> schemaNames = new LinkedHashSet<>(rawToSanitized.values());
         Map<String, ApiEndpoint> schemaSourceEndpoint = new LinkedHashMap<>();
         for (ApiEndpoint ep : repo.getEndpoints()) {
-            if (ep.getRequestBodyType()  != null) {
-                schemaNames.add(ep.getRequestBodyType());
-                schemaSourceEndpoint.putIfAbsent(ep.getRequestBodyType(), ep);
-            }
-            if (ep.getResponseBodyType() != null) {
-                schemaNames.add(ep.getResponseBodyType());
-                schemaSourceEndpoint.putIfAbsent(ep.getResponseBodyType(), ep);
-            }
+            if (ep.getRequestBodyType()  != null && rawToSanitized.containsKey(ep.getRequestBodyType()))
+                schemaSourceEndpoint.putIfAbsent(rawToSanitized.get(ep.getRequestBodyType()), ep);
+            if (ep.getResponseBodyType() != null && rawToSanitized.containsKey(ep.getResponseBodyType()))
+                schemaSourceEndpoint.putIfAbsent(rawToSanitized.get(ep.getResponseBodyType()), ep);
         }
 
         // Build paths
@@ -126,6 +139,35 @@ public class OpenApiGeneratorService {
         }
 
         return doc;
+    }
+
+    /** Build the top-level tags array with AI-generated descriptions. */
+    private List<Map<String, Object>> buildTagList(Repository repo) {
+        // Collect ordered unique tags from endpoints
+        Set<String> orderedTags = new LinkedHashSet<>();
+        for (ApiEndpoint ep : repo.getEndpoints()) {
+            if (ep.getTags() != null) orderedTags.addAll(ep.getTags());
+        }
+        if (orderedTags.isEmpty()) return List.of();
+
+        // Parse stored tag descriptions JSON (may be null)
+        Map<String, String> tagDescs = new LinkedHashMap<>();
+        if (repo.getTagDescriptionsJson() != null) {
+            try {
+                JsonNode node = mapper.readTree(repo.getTagDescriptionsJson());
+                node.fields().forEachRemaining(e -> tagDescs.put(e.getKey(), e.getValue().asText()));
+            } catch (Exception ignored) {}
+        }
+
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (String tag : orderedTags) {
+            Map<String, Object> t = new LinkedHashMap<>();
+            t.put("name", tag);
+            String desc = tagDescs.get(tag);
+            if (desc != null && !desc.isBlank()) t.put("description", desc);
+            list.add(t);
+        }
+        return list;
     }
 
     private Map<String, Object> buildOperation(ApiEndpoint ep) {
@@ -156,11 +198,17 @@ public class OpenApiGeneratorService {
         }
         if (!params.isEmpty()) op.put("parameters", params);
 
-        // Request body
+        // Request body — use sanitized $ref for complex types, inline schema for primitives
         if (ep.getRequestBodyType() != null) {
+            Map<String, Object> schema;
+            if (isPrimitive(ep.getRequestBodyType())) {
+                schema = typeToSchema(ep.getRequestBodyType());
+            } else {
+                schema = Map.of("$ref", "#/components/schemas/" + sanitizeSchemaName(ep.getRequestBodyType()));
+            }
             Map<String, Object> content = new LinkedHashMap<>();
             Map<String, Object> mediaType = new LinkedHashMap<>();
-            mediaType.put("schema", Map.of("$ref", "#/components/schemas/" + ep.getRequestBodyType()));
+            mediaType.put("schema", schema);
             if (ep.getRequestExample() != null) mediaType.put("example", ep.getRequestExample());
             content.put("application/json", mediaType);
             op.put("requestBody", Map.of("required", true, "content", content));
@@ -173,10 +221,22 @@ public class OpenApiGeneratorService {
         for (Integer code : codes) {
             Map<String, Object> resp = new LinkedHashMap<>();
             resp.put("description", statusDescription(code));
-            if (code >= 200 && code < 300 && ep.getResponseBodyType() != null) {
+            // Include response body whenever we have either a known type OR an LLM-generated example
+            boolean hasType    = code >= 200 && code < 300 && ep.getResponseBodyType() != null;
+            boolean hasExample = code >= 200 && code < 300 && ep.getResponseExample() != null;
+            if (hasType || hasExample) {
                 Map<String, Object> content = new LinkedHashMap<>();
                 Map<String, Object> mediaType = new LinkedHashMap<>();
-                mediaType.put("schema", Map.of("$ref", "#/components/schemas/" + ep.getResponseBodyType()));
+                Map<String, Object> schema;
+                if (hasType) {
+                    schema = isPrimitive(ep.getResponseBodyType())
+                            ? typeToSchema(ep.getResponseBodyType())
+                            : Map.of("$ref", "#/components/schemas/" + sanitizeSchemaName(ep.getResponseBodyType()));
+                } else {
+                    // No explicit type but we have an example — use generic object schema
+                    schema = Map.of("type", "object");
+                }
+                mediaType.put("schema", schema);
                 if (ep.getResponseExample() != null) mediaType.put("example", ep.getResponseExample());
                 content.put("application/json", mediaType);
                 resp.put("content", content);
@@ -225,36 +285,112 @@ public class OpenApiGeneratorService {
 
     // ── Type mapping ───────────────────────────────────────────
 
-    private Map<String, Object> typeToSchema(String javaType) {
-        if (javaType == null) return Map.of("type", "string");
-        return switch (javaType) {
-            case "String"                    -> Map.of("type", "string");
-            case "Integer", "int"            -> Map.of("type", "integer", "format", "int32");
-            case "Long", "long"              -> Map.of("type", "integer", "format", "int64");
-            case "Boolean", "boolean"        -> Map.of("type", "boolean");
+    /** Map any parser-extracted type string to an inline OpenAPI schema or a $ref. */
+    private Map<String, Object> typeToSchema(String type) {
+        if (type == null) return Map.of("type", "string");
+        // Normalise: strip leading/trailing whitespace, collapse spaces
+        type = type.trim();
+
+        return switch (type) {
+            // ── Java ───────────────────────────────────────────
+            case "String", "string"                  -> Map.of("type", "string");
+            case "Integer", "int"                    -> Map.of("type", "integer", "format", "int32");
+            case "Long", "long"                      -> Map.of("type", "integer", "format", "int64");
+            case "Boolean", "boolean"                -> Map.of("type", "boolean");
             case "Double", "double",
-                 "Float", "float"            -> Map.of("type", "number");
-            case "BigDecimal"                -> Map.of("type", "number");
-            case "UUID"                      -> Map.of("type", "string", "format", "uuid");
+                 "Float", "number"                  -> Map.of("type", "number");
+            case "BigDecimal"                        -> Map.of("type", "number");
+            case "UUID"                              -> Map.of("type", "string", "format", "uuid");
             case "Instant", "LocalDateTime",
-                 "ZonedDateTime",
-                 "OffsetDateTime"            -> Map.of("type", "string", "format", "date-time");
-            case "LocalDate"                 -> Map.of("type", "string", "format", "date");
+                 "ZonedDateTime", "OffsetDateTime",
+                 "datetime"                          -> Map.of("type", "string", "format", "date-time");
+            case "LocalDate", "date"                 -> Map.of("type", "string", "format", "date");
+            case "void", "Void", "null", "None"      -> Map.of("type", "null");
+            // ── Python ─────────────────────────────────────────
+            case "str"                               -> Map.of("type", "string");
+            case "bool"                              -> Map.of("type", "boolean");
+            case "float"                             -> Map.of("type", "number");
+            case "bytes"                             -> Map.of("type", "string", "format", "binary");
+            case "Any", "any", "object",
+                 "dict", "Dict"                     -> Map.of("type", "object");
+            // ── TypeScript ─────────────────────────────────────
+            case "unknown", "never"                  -> Map.of("type", "object");
+            // ── Go ─────────────────────────────────────────────
+            case "int8", "int16", "int32", "uint",
+                 "uint8", "uint16", "uint32",
+                 "uint64", "int64"                   -> Map.of("type", "integer");
+            case "float32", "float64"                -> Map.of("type", "number");
+            case "error"                             -> Map.of("type", "string");
             default -> {
-                // Generic: List<X>, Set<X>
-                if (javaType.startsWith("List<") || javaType.startsWith("Set<") ||
-                    javaType.startsWith("Collection<")) {
-                    String inner = javaType.replaceAll("^\\w+<(.+)>$", "$1").trim();
+                // ── Python generics: list[X], Optional[X], dict[K,V] ──
+                if (type.startsWith("list[") || type.startsWith("List[") ||
+                    type.startsWith("set[")  || type.startsWith("Set[")) {
+                    String inner = type.replaceAll("^\\w+\\[(.+)\\]$", "$1").trim();
                     yield Map.of("type", "array", "items", typeToSchema(inner));
                 }
-                // Map<K,V>
-                if (javaType.startsWith("Map<")) {
+                if (type.startsWith("Optional[")) {
+                    String inner = type.replaceAll("^Optional\\[(.+)\\]$", "$1").trim();
+                    yield typeToSchema(inner);
+                }
+                if (type.startsWith("dict[") || type.startsWith("Dict[")) {
                     yield Map.of("type", "object");
                 }
-                // Custom DTO → $ref
-                yield Map.of("$ref", "#/components/schemas/" + javaType);
+                if (type.startsWith("Union[")) {
+                    yield Map.of("type", "object");
+                }
+                // ── Java generics: List<X>, Set<X>, etc. ──────────────
+                if (type.startsWith("List<") || type.startsWith("Set<") ||
+                    type.startsWith("Collection<") || type.startsWith("Iterable<")) {
+                    String inner = type.replaceAll("^\\w+<(.+)>$", "$1").trim();
+                    yield Map.of("type", "array", "items", typeToSchema(inner));
+                }
+                if (type.startsWith("Map<") || type.startsWith("HashMap<")) {
+                    yield Map.of("type", "object");
+                }
+                // ── Union / nullable suffixes ──────────────────────────
+                if (type.contains("|") || type.contains("?")) {
+                    // e.g. "str | None", "string | null" — use the first non-null part
+                    String first = type.split("[|?]")[0].trim();
+                    yield typeToSchema(first);
+                }
+                // ── Types with brackets/generics not caught above ──────
+                if (type.contains("[") || type.contains("<") || type.contains(" ")) {
+                    yield Map.of("type", "object");
+                }
+                // ── Types with invalid OpenAPI chars ───────────────────
+                if (!type.matches("[a-zA-Z0-9._\\-]+")) {
+                    yield Map.of("type", "object");
+                }
+                // ── Assume custom DTO → $ref with sanitised name ───────
+                yield Map.of("$ref", "#/components/schemas/" + type);
             }
         };
+    }
+
+    /**
+     * True when typeToSchema() produces an inline primitive schema (no $ref).
+     * Used to skip adding primitive types as named components.
+     */
+    private boolean isPrimitive(String type) {
+        if (type == null) return true;
+        Map<String, Object> schema = typeToSchema(type);
+        return !schema.containsKey("$ref");
+    }
+
+    /**
+     * Sanitize a raw parser type name into a valid OpenAPI component key
+     * (must match {@code ^[a-zA-Z0-9\.\-_]+$}).
+     */
+    private String sanitizeSchemaName(String name) {
+        if (name == null || name.isBlank()) return "Schema";
+        // Remove generic wrappers: List<Foo> → Foo, list[Foo] → Foo
+        name = name.replaceAll("^(?:List|list|Set|set|Optional|Collection|Iterable)<(.+)>$", "$1");
+        name = name.replaceAll("^(?:list|set|dict)\\[(.+)\\]$", "$1");
+        // Strip invalid chars (brackets, pipes, spaces, commas, etc.)
+        name = name.replaceAll("[^a-zA-Z0-9._\\-]", "_");
+        // Collapse multiple underscores / trim leading+trailing
+        name = name.replaceAll("_+", "_").replaceAll("^_+|_+$", "");
+        return name.isEmpty() ? "Schema" : name;
     }
 
     private String statusDescription(int code) {

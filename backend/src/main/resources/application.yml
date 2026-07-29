@@ -39,9 +39,9 @@ logging:
     org.springframework.web: INFO
 
 llm:
-  enabled: false
-  # Switch to "anthropic" and set ANTHROPIC_API_KEY to use Claude instead
-  provider: gemini
-  api-key: ${GEMINI_API_KEY:}
-  model: gemini-2.0-flash
-  base-url: https://generativelanguage.googleapis.com
+  enabled: true
+  provider: azure-openai
+  api-key: ${AZURE_OPENAI_API_KEY}
+  model: ${AZURE_OPENAI_DEPLOYMENT:gpt-4o-intern}
+  api-version: ${AZURE_OPENAI_API_VERSION:2025-01-01-preview}
+  base-url: ${AZURE_OPENAI_ENDPOINT:https://slk-procurement.openai.azure.com}

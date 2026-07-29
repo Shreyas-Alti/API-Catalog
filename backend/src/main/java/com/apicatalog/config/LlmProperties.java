@@ -8,11 +8,12 @@ import org.springframework.stereotype.Component;
 public class LlmProperties {
 
     private boolean enabled  = false;
-    /** "anthropic" or "gemini" */
+    /** "anthropic", "gemini", or "azure-openai" */
     private String  provider = "anthropic";
     private String  apiKey   = "";
     private String  model    = "claude-sonnet-4-6";
     private String  baseUrl  = "https://api.anthropic.com";
+    private String  apiVersion = "2024-02-15-preview";
 
     public boolean isEnabled()  { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
@@ -28,4 +29,7 @@ public class LlmProperties {
 
     public String getBaseUrl() { return baseUrl; }
     public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
+
+    public String getApiVersion() { return apiVersion; }
+    public void setApiVersion(String apiVersion) { this.apiVersion = apiVersion; }
 }

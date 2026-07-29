@@ -4,10 +4,12 @@ import com.apicatalog.config.LlmProperties;
 import com.apicatalog.model.ApiField;
 import com.apicatalog.model.ApiParameter;
 import com.apicatalog.model.ExtractedApi;
+import com.apicatalog.model.Repository;
 import com.apicatalog.service.context.HandlerMethodExtractor;
 import com.apicatalog.service.context.TypeIndexBuilder;
 import com.apicatalog.service.llm.LlmClient;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -92,9 +94,11 @@ public class EndpointEnrichmentService {
             String relPath = entry.getKey();
             List<IndexedApi> group = entry.getValue();
 
-            // Skip endpoints that already have a description
+            // Skip endpoints that have already been AI-enriched (have a summary).
+            // A parser-extracted description does NOT block enrichment — the LLM still
+            // needs to produce summary, requestExample, responseExample, etc.
             List<IndexedApi> toEnrich = group.stream()
-                    .filter(ia -> ia.api.getDescription() == null || ia.api.getDescription().isBlank())
+                    .filter(ia -> ia.api.getSummary() == null || ia.api.getSummary().isBlank())
                     .collect(Collectors.toList());
 
             if (toEnrich.isEmpty()) continue;
@@ -207,6 +211,67 @@ public class EndpointEnrichmentService {
     // ── Response merging ───────────────────────────────────────
 
     @SuppressWarnings("unchecked")
+    // ── Repo-level enrichment (intro description + tag descriptions) ────────
+
+    private static final String REPO_LEVEL_SYSTEM = """
+            You are a technical writer producing OpenAPI documentation.
+            Analyse the provided endpoint list and return ONLY a valid JSON object — no prose, no markdown fences.
+            """;
+
+    /**
+     * Generates an API intro description and per-tag descriptions using the LLM.
+     * Results are stored directly on the {@link Repository} entity (caller must save it).
+     * No-op when LLM is disabled.
+     */
+    public void enrichRepoLevel(Repository repo, List<ExtractedApi> apis) {
+        if (!llmProperties.isEnabled() || apis == null || apis.isEmpty()) return;
+
+        // Build a compact endpoint summary for the prompt
+        StringBuilder sb = new StringBuilder();
+        sb.append("Repository: ").append(repo.getName()).append("\n");
+        sb.append("Framework: ").append(repo.getFramework()).append("\n\n");
+        sb.append("Endpoints:\n");
+        for (ExtractedApi ep : apis) {
+            sb.append("  ").append(ep.getMethod()).append(" ").append(ep.getPath());
+            if (ep.getSummary() != null && !ep.getSummary().isBlank())
+                sb.append(" — ").append(ep.getSummary());
+            if (ep.getTags() != null && !ep.getTags().isEmpty())
+                sb.append(" [").append(String.join(", ", ep.getTags())).append("]");
+            sb.append("\n");
+        }
+        sb.append("""
+
+                Return a JSON object with exactly two keys:
+                1. "apiDescription": 2-3 sentence professional description of what this API provides.
+                2. "tags": object mapping each tag name to a one-sentence description of that group.
+
+                Example:
+                {
+                  "apiDescription": "This API manages ...",
+                  "tags": { "articles": "CRUD operations for articles", "auth": "User authentication" }
+                }
+                """);
+
+        try {
+            String response = llmClient.complete(REPO_LEVEL_SYSTEM, sb.toString());
+            // Strip any accidental markdown fences
+            String json = response.replaceAll("(?s)```json\\s*(.*?)\\s*```", "$1")
+                                  .replaceAll("(?s)```\\s*(.*?)\\s*```", "$1").trim();
+            JsonNode root = mapper.readTree(json);
+
+            String apiDesc = root.path("apiDescription").asText(null);
+            if (apiDesc != null && !apiDesc.isBlank()) repo.setApiDescription(apiDesc);
+
+            JsonNode tagsNode = root.path("tags");
+            if (tagsNode.isObject()) {
+                repo.setTagDescriptionsJson(mapper.writeValueAsString(tagsNode));
+            }
+            log.debug("Repo-level enrichment complete for '{}'", repo.getName());
+        } catch (Exception e) {
+            log.warn("Repo-level enrichment failed for '{}': {}", repo.getName(), e.getMessage());
+        }
+    }
+
     // ── README context ──────────────────────────────────────────────────────
 
     /**

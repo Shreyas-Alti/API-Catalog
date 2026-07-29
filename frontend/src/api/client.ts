@@ -52,6 +52,7 @@ export interface SubmitResponse {
   llmEnrichmentEnabled: boolean
   testRequestAvailable: boolean
   groups: string[]
+  importedFromSpec: boolean
 }
 
 export interface SaveRequest {

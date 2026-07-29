@@ -37,6 +37,14 @@ public class Repository {
     @Column(name = "openapi_generated_at")
     private LocalDateTime openapiGeneratedAt;
 
+    /** AI-generated description of the whole API (used for OpenAPI info.description). */
+    @Column(name = "api_description", columnDefinition = "TEXT")
+    private String apiDescription;
+
+    /** AI-generated tag descriptions stored as JSON object string {"tag": "desc", ...}. */
+    @Column(name = "tag_descriptions_json", columnDefinition = "TEXT")
+    private String tagDescriptionsJson;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -76,6 +84,12 @@ public class Repository {
     public void setOpenapiGeneratedAt(LocalDateTime openapiGeneratedAt) { this.openapiGeneratedAt = openapiGeneratedAt; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
+
+    public String getApiDescription() { return apiDescription; }
+    public void setApiDescription(String apiDescription) { this.apiDescription = apiDescription; }
+
+    public String getTagDescriptionsJson() { return tagDescriptionsJson; }
+    public void setTagDescriptionsJson(String tagDescriptionsJson) { this.tagDescriptionsJson = tagDescriptionsJson; }
 
     public List<ApiEndpoint> getEndpoints() { return endpoints; }
     public void setEndpoints(List<ApiEndpoint> endpoints) { this.endpoints = endpoints; }

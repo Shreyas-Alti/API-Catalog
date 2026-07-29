@@ -19,11 +19,13 @@ public class SubmitResponse {
     private boolean testRequestAvailable;
     /** Distinct API groups (tags or controller names) across the extraction run. */
     private List<String> groups;
+    /** True when the result was imported from a committed OpenAPI spec rather than parsed. */
+    private boolean importedFromSpec;
 
     public SubmitResponse(String name, String url, String hostUrl, String framework,
                           boolean supported, List<ExtractedApi> apis, String commitSha,
                           boolean llmEnrichmentEnabled, boolean testRequestAvailable,
-                          List<String> groups) {
+                          List<String> groups, boolean importedFromSpec) {
         this.name = name;
         this.url = url;
         this.hostUrl = hostUrl;
@@ -34,6 +36,7 @@ public class SubmitResponse {
         this.llmEnrichmentEnabled = llmEnrichmentEnabled;
         this.testRequestAvailable = testRequestAvailable;
         this.groups = groups;
+        this.importedFromSpec = importedFromSpec;
     }
 
     public String getName() { return name; }
@@ -46,4 +49,5 @@ public class SubmitResponse {
     public boolean isLlmEnrichmentEnabled() { return llmEnrichmentEnabled; }
     public boolean isTestRequestAvailable() { return testRequestAvailable; }
     public List<String> getGroups() { return groups; }
+    public boolean isImportedFromSpec() { return importedFromSpec; }
 }

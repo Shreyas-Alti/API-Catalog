@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.regex.*;
+import java.util.stream.Collectors;
 
 @Component
 public class FastAPIParser implements ParserPlugin {
@@ -29,6 +30,9 @@ public class FastAPIParser implements ParserPlugin {
         "^class\\s+(\\w+)\\s*\\(\\s*(?:BaseModel|pydantic\\.BaseModel|SQLModel|Schema)[^)]*\\)\\s*:");
     private static final Pattern PY_FIELD = Pattern.compile(
         "^    (\\w+)\\s*:\\s*([\\w\\[\\],\\s|]+?)(?:\\s*=.*)?$");
+    // APIRouter(tags=["articles"]) — router-level default tags
+    private static final Pattern ROUTER_TAGS = Pattern.compile(
+        "APIRouter\\s*\\([^)]*tags\\s*=\\s*\\[([^\\]]*?)\\]");
 
     private static final Set<String> PRIMITIVES = Set.of(
         "int","str","float","bool","bytes","None","Any","Dict","List","Tuple",
@@ -65,8 +69,11 @@ public class FastAPIParser implements ParserPlugin {
 
     private List<ExtractedApi> parseFile(Path file, Map<String, Path> modelIndex, Path root) throws IOException {
         String[] lines = Files.readString(file).split("\\r?\\n");
+        String fileContent = String.join("\n", lines);
         List<ExtractedApi> apis = new ArrayList<>();
         String relPath = root.relativize(file).toString().replace(java.io.File.separatorChar, '/');
+        String controller = deriveController(file);
+        List<String> routerTags = extractRouterTags(fileContent); // file-level default
         for (int i = 0; i < lines.length; i++) {
             // Quick pre-check on the raw line before doing heavier work
             if (!DEC_START.matcher(lines[i].trim()).find()) continue;
@@ -111,7 +118,10 @@ public class FastAPIParser implements ParserPlugin {
             for (ApiParameter p : params) { if ("BODY".equals(p.getLocation())) { reqBodyType = p.getType(); reqBodyFields = resolveModel(reqBodyType, modelIndex); break; } }
             List<ApiField> respFields = resolveModel(returnType, modelIndex);
             ExtractedApi api = new ExtractedApi();
-            api.setMethod(httpMethod); api.setPath(path); api.setHandler(handlerName); api.setDescription(desc);
+            api.setMethod(httpMethod); api.setPath(path); api.setController(controller); api.setHandler(handlerName); api.setDescription(desc);
+            // Route-level tags from decorator override router-level default
+            List<String> routeTags = parseTagList(decoratorArgs);
+            api.setTags(routeTags.isEmpty() ? (routerTags.isEmpty() ? null : routerTags) : routeTags);
             api.setParameters(params.isEmpty() ? null : params);
             api.setRequestBodyType(reqBodyType); api.setRequestBodyFields(reqBodyFields.isEmpty() ? null : reqBodyFields);
             api.setResponseBodyType(returnType); api.setResponseBodyFields(respFields.isEmpty() ? null : respFields);
@@ -120,6 +130,30 @@ public class FastAPIParser implements ParserPlugin {
             apis.add(api);
         }
         return apis;
+    }
+
+    /** "user_router.py" → "UserRouter" */
+    private String deriveController(Path file) {
+        String name = file.getFileName().toString().replaceAll("\\.py$", "");
+        return Arrays.stream(name.split("[-_.]"))
+                .filter(w -> !w.isEmpty())
+                .map(w -> Character.toUpperCase(w.charAt(0)) + w.substring(1))
+                .collect(Collectors.joining());
+    }
+
+    /** Extract router-level default tags from APIRouter(tags=["articles"]) in the file. */
+    private List<String> extractRouterTags(String fileContent) {
+        Matcher m = ROUTER_TAGS.matcher(fileContent);
+        return m.find() ? parseTagList(m.group(1)) : List.of();
+    }
+
+    /** Parse a Python list of string literals: ["articles", 'users'] → [articles, users]. */
+    private List<String> parseTagList(String raw) {
+        if (raw == null || raw.isBlank()) return List.of();
+        List<String> tags = new ArrayList<>();
+        Matcher m = Pattern.compile("['\"]([^'\"]+)['\"]").matcher(raw);
+        while (m.find()) tags.add(m.group(1));
+        return tags;
     }
 
     /**

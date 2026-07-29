@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.regex.*;
+import java.util.stream.Collectors;
 
 @Component
 public class FastifyParser implements ParserPlugin {
@@ -38,6 +39,11 @@ public class FastifyParser implements ParserPlugin {
     private static final Pattern REPLY_STATUS    = Pattern.compile("reply\\.(?:status|code)\\s*\\(\\s*(\\d{3})\\s*\\)");
     private static final Pattern URL_PARAM       = Pattern.compile(":(\\w+)");
     private static final Pattern JSDOC_LINE      = Pattern.compile("^\\s*\\*\\s*(?!@)(\\w.+)$");
+    // Response JSON Schema: response: { 200: { properties: { field: { type: '...' } } } }
+    private static final Pattern RESPONSE_SCHEMA  = Pattern.compile(
+        "response\\s*:\\s*\\{[^}]*?(\\d{3})\\s*:\\s*\\{([^}]*)\\}", Pattern.DOTALL);
+    private static final Pattern SCHEMA_PROP_TYPE = Pattern.compile(
+        "(\\w+)\\s*:\\s*\\{\\s*type\\s*:\\s*['\"`](\\w+)['\"`]");
 
     private static final Set<String> KEYWORDS = Set.of(
         "request","reply","req","res","next","done","opts","options","fastify","server","app");
@@ -67,6 +73,7 @@ public class FastifyParser implements ParserPlugin {
         String[] lines = Files.readAllLines(file).toArray(new String[0]);
         List<ExtractedApi> apis = new ArrayList<>();
         String relPath = root.relativize(file).toString().replace(java.io.File.separatorChar, '/');
+        String controller = deriveController(file);
 
         for (int i = 0; i < lines.length; i++) {
             // ── 1. Shorthand style: fastify.get('/path', opts, handler) ────
@@ -83,7 +90,17 @@ public class FastifyParser implements ParserPlugin {
                 String desc = jsDocAbove(lines, i);
                 String routeBlock = collectBlock(lines, i, 65);
                 ExtractedApi api = buildApi(httpMethod, path, handler, desc, routeBlock, relPath, i + 1);
-                if (api != null) apis.add(api);
+                if (api != null) {
+                    api.setController(controller);
+                    // Real response fields from JSON Schema if present, otherwise null
+                    List<ApiField> respFields = extractResponseFields(routeBlock);
+                    if (!respFields.isEmpty()) {
+                        api.setResponseBodyType(controller + "Response");
+                        api.setResponseBodyFields(respFields);
+                    }
+                    api.setTags(List.of(controller));
+                    apis.add(api);
+                }
                 continue;
             }
 
@@ -106,10 +123,41 @@ public class FastifyParser implements ParserPlugin {
 
                 String desc = jsDocAbove(lines, i);
                 ExtractedApi api = buildApi(httpMethod, path, handler, desc, block, relPath, i + 1);
-                if (api != null) apis.add(api);
+                if (api != null) {
+                    api.setController(controller);
+                    List<ApiField> respFields = extractResponseFields(block);
+                    if (!respFields.isEmpty()) {
+                        api.setResponseBodyType(controller + "Response");
+                        api.setResponseBodyFields(respFields);
+                    }
+                    api.setTags(List.of(controller));
+                    apis.add(api);
+                }
             }
         }
         return apis;
+    }
+
+    /** "user-routes.ts" → "UserRoutes" */
+    private String deriveController(Path file) {
+        String name = file.getFileName().toString().replaceAll("\\.(js|ts|mjs)$", "");
+        return Arrays.stream(name.split("[-_.]"))
+                .filter(w -> !w.isEmpty())
+                .map(w -> Character.toUpperCase(w.charAt(0)) + w.substring(1))
+                .collect(Collectors.joining());
+    }
+
+    /** Extract response body fields from JSON Schema response block in a route definition. */
+    private List<ApiField> extractResponseFields(String routeBlock) {
+        if (routeBlock == null) return List.of();
+        Matcher rm = RESPONSE_SCHEMA.matcher(routeBlock);
+        if (!rm.find()) return List.of();
+        List<ApiField> fields = new ArrayList<>();
+        Matcher pm = SCHEMA_PROP_TYPE.matcher(rm.group(2));
+        while (pm.find()) {
+            ApiField f = new ApiField(); f.setName(pm.group(1)); f.setType(pm.group(2)); fields.add(f);
+        }
+        return fields;
     }
 
     /** Build an ExtractedApi from parsed fields, extracting schema + status codes from routeBlock. */

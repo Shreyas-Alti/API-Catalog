@@ -73,35 +73,32 @@ export default function AddRepoDialog({ onClose, onSubmitted }: Props) {
     >
       <div
         className="modal"
-        style={{ maxWidth: 520 }}
+        style={{ maxWidth: 520, position: 'relative' }}
         onClick={e => e.stopPropagation()}
       >
         {/* ── FORM ─────────────────────────────────── */}
         {phase === 'form' && (
           <>
-            <div className="modal-header">
-              <span style={{ fontWeight: 600, fontSize: '1rem', color: 'var(--text-primary)' }}>
+            {/* × pinned to top-right corner of the modal */}
+            <button
+              className="modal-close"
+              onClick={onClose}
+              style={{ position: 'absolute', top: '0.6rem', right: '0.6rem', zIndex: 1 }}
+            >✕</button>
+
+            <div className="modal-body" style={{ padding: '1.5rem 1.25rem 1.25rem' }}>
+              <p style={{ fontWeight: 600, fontSize: '1rem', color: 'var(--accent)', marginBottom: '1rem' }}>
                 Add repository
-              </span>
-              <button className="modal-close" onClick={onClose}>✕</button>
-            </div>
-            <div className="modal-body" style={{ padding: '1.25rem' }}>
+              </p>
               {error && <div className="alert alert-error">{error}</div>}
               <form onSubmit={handleSubmit}>
-                <div className="form-group">
-                  <label>Repository URL</label>
-                  <input
-                    className="input" type="url" required autoFocus
-                    placeholder="https://github.com/owner/repo"
-                    value={url} onChange={e => setUrl(e.target.value)}
-                  />
-                </div>
                 <div className="form-group">
                   <label>Project name <span className="optional-label">(optional)</span></label>
                   <input
                     className="input"
                     placeholder="Defaults to repo name"
                     value={projectName} onChange={e => setProjectName(e.target.value)}
+                    autoFocus
                   />
                 </div>
                 <div className="form-group">
@@ -115,8 +112,15 @@ export default function AddRepoDialog({ onClose, onSubmitted }: Props) {
                     value={hostUrl} onChange={e => setHostUrl(e.target.value)}
                   />
                 </div>
-                <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.25rem' }}>
-                  <button type="button" className="btn btn-outline" onClick={onClose}>Cancel</button>
+                <div className="form-group">
+                  <label>Repository URL</label>
+                  <input
+                    className="input" type="url" required
+                    placeholder="https://github.com/owner/repo"
+                    value={url} onChange={e => setUrl(e.target.value)}
+                  />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.25rem' }}>
                   <button type="submit" className="btn btn-primary" disabled={!url.trim()}>
                     Extract APIs
                   </button>
@@ -173,6 +177,9 @@ export default function AddRepoDialog({ onClose, onSubmitted }: Props) {
                 )}
                 {!result.testRequestAvailable && (
                   <p className="report-note">No host URL set — Test Request won't be available.</p>
+                )}
+                {result.importedFromSpec && (
+                  <p className="report-note">Imported directly from a committed OpenAPI file — static parsing and AI enrichment were skipped.</p>
                 )}
 
                 <div className="report-actions">

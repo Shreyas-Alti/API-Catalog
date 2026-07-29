@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.regex.*;
+import java.util.stream.Collectors;
 
 @Component
 public class ExpressParser implements ParserPlugin {
@@ -29,8 +30,15 @@ public class ExpressParser implements ParserPlugin {
     private static final Pattern REQ_QUERY = Pattern.compile("req\\.query(?:\\.(\\w+)|\\[['\"]([\\w]+)['\"]\\])");
     private static final Pattern BODY_DESTRUCT = Pattern.compile("(?:const|let|var)\\s*\\{([^}]+)\\}\\s*=\\s*req\\.body");
     private static final Pattern RES_STATUS = Pattern.compile("res\\.(?:status|sendStatus)\\s*\\(\\s*(\\d{3})\\s*\\)");
+    // res.json({ key: val, key2: val2 }) — extract top-level keys as response field names
+    private static final Pattern RES_JSON = Pattern.compile("res\\.(?:json|send)\\s*\\(\\s*\\{([^}]{0,300})\\}");
+    private static final Pattern RES_JSON_KEY = Pattern.compile("([a-zA-Z_$][\\w$]*)\\s*:");
     private static final Pattern URL_PARAM = Pattern.compile(":(\\w+)");
     private static final Pattern JSDOC_LINE = Pattern.compile("^\\s*\\*\\s*(?!@)(\\w.+)$");
+
+    // Best-effort response type from TypeScript return annotation or JSDoc @returns
+    private static final Pattern TS_RETURN_TYPE = Pattern.compile(":\\s*Promise<([\\w<>\\[\\]]+)>");
+    private static final Pattern JSDOC_RETURNS   = Pattern.compile("@returns?\\s*\\{([\\w<>\\[\\]]+)\\}");
 
     private static final Set<String> KEYWORDS = Set.of(
         "req","res","next","err","null","true","false","async","function",
@@ -63,6 +71,7 @@ public class ExpressParser implements ParserPlugin {
         String[] lines = Files.readAllLines(file).toArray(new String[0]);
         List<ExtractedApi> apis = new ArrayList<>();
         String relPath = root.relativize(file).toString().replace(java.io.File.separatorChar, '/');
+        String controller = deriveController(file);
         Set<Integer> skip = new HashSet<>(); // lines consumed by .route() chain continuation
 
         for (int i = 0; i < lines.length; i++) {
@@ -90,6 +99,7 @@ public class ExpressParser implements ParserPlugin {
                 Set<String> queryNames = new LinkedHashSet<>();
                 boolean hasBody = false; Set<String> bodyFields = new LinkedHashSet<>();
                 List<Integer> codes = new ArrayList<>();
+                Set<String> responseFieldNames = new LinkedHashSet<>();
                 for (int j = i + 1; j < Math.min(i + 45, lines.length); j++) {
                     String bl = lines[j];
                     if (j > i + 2 && ROUTE.matcher(bl).find()) break;
@@ -107,6 +117,12 @@ public class ExpressParser implements ParserPlugin {
                     }
                     Matcher sm = RES_STATUS.matcher(bl);
                     while (sm.find()) { try { int code = Integer.parseInt(sm.group(1)); if (!codes.contains(code)) codes.add(code); } catch (NumberFormatException ignored) {} }
+                    // Extract top-level keys from res.json({key: ...}) for response schema
+                    Matcher rjm = RES_JSON.matcher(bl);
+                    if (rjm.find()) {
+                        Matcher km = RES_JSON_KEY.matcher(rjm.group(1));
+                        while (km.find()) responseFieldNames.add(km.group(1));
+                    }
                 }
                 for (String qn : queryNames) { ApiParameter p = new ApiParameter(); p.setName(qn); p.setType("string"); p.setLocation("QUERY"); p.setRequired(false); params.add(p); }
                 String reqBodyType = null; List<ApiField> reqBodyFields = List.of();
@@ -119,10 +135,23 @@ public class ExpressParser implements ParserPlugin {
                         reqBodyFields = fList;
                     }
                 }
+                // Response body — build from res.json() keys when available, then try TS/JSDoc type
+                String respBodyType = null; List<ApiField> respBodyFields = List.of();
+                if (!responseFieldNames.isEmpty()) {
+                    respBodyType = "object";
+                    List<ApiField> fList = new ArrayList<>();
+                    for (String fn : responseFieldNames) { ApiField f = new ApiField(); f.setName(fn); f.setType("any"); fList.add(f); }
+                    respBodyFields = fList;
+                } else {
+                    // Fall back to TS return type or JSDoc @returns (leaves null for plain JS — correct)
+                    respBodyType = extractResponseType(lines[i], desc);
+                }
                 ExtractedApi api = new ExtractedApi();
-                api.setMethod(httpMethod); api.setPath(path); api.setHandler(handler); api.setDescription(desc);
+                api.setMethod(httpMethod); api.setPath(path); api.setController(controller); api.setHandler(handler); api.setDescription(desc);
+                api.setTags(List.of(controller));
                 api.setParameters(params.isEmpty() ? null : params);
                 api.setRequestBodyType(reqBodyType); api.setRequestBodyFields(reqBodyFields.isEmpty() ? null : reqBodyFields);
+                api.setResponseBodyType(respBodyType); api.setResponseBodyFields(respBodyFields.isEmpty() ? null : respBodyFields);
                 api.setStatusCodes(codes.isEmpty() ? null : codes);
                 api.setSourceFile(relPath); api.setSourceLine(i + 1);
                 apis.add(api);
@@ -157,7 +186,8 @@ public class ExpressParser implements ParserPlugin {
                 String method = cm.group(1).toUpperCase();
                 String handler = lastIdentifier(cm.group(2) != null ? cm.group(2) : "");
                 ExtractedApi api = new ExtractedApi();
-                api.setMethod(method); api.setPath(basePath); api.setHandler(handler);
+                api.setMethod(method); api.setPath(basePath); api.setController(controller); api.setHandler(handler); api.setDescription(desc);
+                api.setTags(List.of(controller));
                 api.setDescription(desc);
                 api.setParameters(baseParams.isEmpty() ? null : new ArrayList<>(baseParams));
                 api.setSourceFile(relPath); api.setSourceLine(i + 1);
@@ -173,6 +203,26 @@ public class ExpressParser implements ParserPlugin {
         String last = null;
         while (idm.find()) { String c = idm.group(1); if (!KEYWORDS.contains(c)) last = c; }
         return last;
+    }
+
+    /** "user-routes.ts" → "UserRoutes" */
+    private String deriveController(Path file) {
+        String name = file.getFileName().toString().replaceAll("\\.(js|ts|mjs)$", "");
+        return Arrays.stream(name.split("[-_.]"))
+                .filter(w -> !w.isEmpty())
+                .map(w -> Character.toUpperCase(w.charAt(0)) + w.substring(1))
+                .collect(Collectors.joining());
+    }
+
+    /** TS Promise<T> return type or JSDoc @returns {T}, else null (correct for plain JS). */
+    private String extractResponseType(String signatureLine, String precedingJsDoc) {
+        Matcher tm = TS_RETURN_TYPE.matcher(signatureLine);
+        if (tm.find()) return tm.group(1);
+        if (precedingJsDoc != null) {
+            Matcher jm = JSDOC_RETURNS.matcher(precedingJsDoc);
+            if (jm.find()) return jm.group(1);
+        }
+        return null;
     }
 
     private String jsDocAbove(String[] lines, int routeLine) {
