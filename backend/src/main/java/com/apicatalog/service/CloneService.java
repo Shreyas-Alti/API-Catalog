@@ -26,6 +26,11 @@ public class CloneService {
                     .setDepth(1)
                     .call()) {
 
+                // Disable background auto-GC so JGit doesn't try to access
+                // lock files after we delete the temp directory in cleanup().
+                git.getRepository().getConfig().setInt("gc", null, "auto", 0);
+                git.getRepository().getConfig().save();
+
                 String sha = "";
                 try {
                     ObjectId head = git.getRepository().resolve("HEAD");

@@ -21,22 +21,30 @@ public class FastAPIParser implements ParserPlugin {
     private static final Pattern DEC_START = Pattern.compile(
         "^@[\\w.]+\\.(get|post|put|delete|patch)\\s*\\(",
         Pattern.CASE_INSENSITIVE);
-    private static final Pattern DEC_PATH = Pattern.compile("[\"']([^\"']+)[\"']");
+    // Anchored to start of args — captures empty string ("") as a valid path
+    private static final Pattern DEC_PATH = Pattern.compile("^\\s*['\"]([^'\"]*)['\"]\\s*(?:[,)]|$)");
     private static final Pattern STATUS_CODE_ARG = Pattern.compile("status_code\\s*=\\s*(\\d+)");
     private static final Pattern RESPONSE_MODEL = Pattern.compile("response_model\\s*=\\s*(\\w+)");
     private static final Pattern FUNC_DEF = Pattern.compile("^(?:async\\s+)?def\\s+(\\w+)\\s*\\(");
     private static final Pattern RETURN_TYPE = Pattern.compile("\\)\\s*->\\s*([\\w\\[\\],\\s|]+?)\\s*:");
+    // Accept any class with any (or no) base class — resolveModel verifies by exact name
     private static final Pattern PYDANTIC_CLASS = Pattern.compile(
-        "^class\\s+(\\w+)\\s*\\(\\s*(?:BaseModel|pydantic\\.BaseModel|SQLModel|Schema)[^)]*\\)\\s*:");
+        "^class\\s+(\\w+)\\s*(?:\\([^)]*\\))?\\s*:");
     private static final Pattern PY_FIELD = Pattern.compile(
         "^    (\\w+)\\s*:\\s*([\\w\\[\\],\\s|]+?)(?:\\s*=.*)?$");
-    // APIRouter(tags=["articles"]) — router-level default tags
     private static final Pattern ROUTER_TAGS = Pattern.compile(
         "APIRouter\\s*\\([^)]*tags\\s*=\\s*\\[([^\\]]*?)\\]");
+    private static final Pattern LOCAL_PREFIX = Pattern.compile(
+        "APIRouter\\s*\\([^)]*prefix\\s*=\\s*['\"]([^'\"]*)['\"]");
+    private static final Pattern INCLUDE_ROUTER = Pattern.compile(
+        "include_router\\s*\\(\\s*([\\w.]+)\\s*,[^)]*?prefix\\s*=\\s*['\"]([^'\"]*)['\"]\\s*[,)]",
+        Pattern.DOTALL);
 
     private static final Set<String> PRIMITIVES = Set.of(
         "int","str","float","bool","bytes","None","Any","Dict","List","Tuple",
-        "Optional","Union","Type","UUID","datetime","date","time","Decimal",
+        "Optional","Union","Type","UUID","UUID4","datetime","date","time",
+        "Decimal","condecimal","PositiveInt","PositiveFloat","constr",
+        "EmailStr","HttpUrl","AnyUrl","SecretStr",
         "Response","JSONResponse","StreamingResponse","FileResponse",
         "HTMLResponse","RedirectResponse","PlainTextResponse","BackgroundTasks",
         "Request","HTTPException");
@@ -47,12 +55,13 @@ public class FastAPIParser implements ParserPlugin {
     @Override
     public List<ExtractedApi> extract(Path root) {
         Map<String, Path> modelIndex = buildModelIndex(root);
+        Map<String, String> externalPrefixMap = buildExternalPrefixMap(root);
         List<ExtractedApi> apis = new ArrayList<>();
         try {
             Files.walk(root)
                 .filter(p -> p.toString().endsWith(".py"))
                 .filter(p -> !p.getFileName().toString().startsWith("test_") && !p.toString().contains("/tests/"))
-                .forEach(f -> { try { apis.addAll(parseFile(f, modelIndex, root)); } catch (IOException ignored) {} });
+                .forEach(f -> { try { apis.addAll(parseFile(f, modelIndex, externalPrefixMap, root)); } catch (IOException ignored) {} });
         } catch (IOException ignored) {}
         return apis;
     }
@@ -67,13 +76,15 @@ public class FastAPIParser implements ParserPlugin {
         return idx;
     }
 
-    private List<ExtractedApi> parseFile(Path file, Map<String, Path> modelIndex, Path root) throws IOException {
+    private List<ExtractedApi> parseFile(Path file, Map<String, Path> modelIndex,
+                                          Map<String, String> externalPrefixMap, Path root) throws IOException {
         String[] lines = Files.readString(file).split("\\r?\\n");
         String fileContent = String.join("\n", lines);
         List<ExtractedApi> apis = new ArrayList<>();
         String relPath = root.relativize(file).toString().replace(java.io.File.separatorChar, '/');
         String controller = deriveController(file);
-        List<String> routerTags = extractRouterTags(fileContent); // file-level default
+        List<String> routerTags = extractRouterTags(fileContent);
+        String pathPrefix = normalizePathPrefix(resolveExternalPrefix(file, externalPrefixMap) + findLocalPrefix(fileContent));
         for (int i = 0; i < lines.length; i++) {
             // Quick pre-check on the raw line before doing heavier work
             if (!DEC_START.matcher(lines[i].trim()).find()) continue;
@@ -85,7 +96,10 @@ public class FastAPIParser implements ParserPlugin {
             String decoratorArgs = dm.group(2);
             Matcher pathM = DEC_PATH.matcher(decoratorArgs);
             if (!pathM.find()) continue;
-            String path = pathM.group(1);
+            String routePath = pathM.group(1);
+            if (!routePath.isEmpty() && !routePath.startsWith("/")) continue; // decorator arg mistaken for path
+            String path = routePath.isEmpty() ? pathPrefix : pathPrefix + routePath;
+            if (path.isEmpty()) path = "/";
             List<Integer> codes = new ArrayList<>();
             Matcher scm = STATUS_CODE_ARG.matcher(decoratorArgs);
             if (scm.find()) { try { codes.add(Integer.parseInt(scm.group(1))); } catch (Exception ignored) {} }
@@ -127,6 +141,7 @@ public class FastAPIParser implements ParserPlugin {
             api.setResponseBodyType(returnType); api.setResponseBodyFields(respFields.isEmpty() ? null : respFields);
             api.setStatusCodes(codes.isEmpty() ? null : codes);
             api.setSourceFile(relPath); api.setSourceLine(i + 1);
+            ensurePathParamsPresent(api);
             apis.add(api);
         }
         return apis;
@@ -235,7 +250,7 @@ public class FastAPIParser implements ParserPlugin {
             boolean inClass = false;
             for (String rawLine : lines) {
                 String t = rawLine.trim();
-                if (t.startsWith("class " + name + "(")) { inClass = true; continue; }
+                if (t.startsWith("class " + name + "(") || t.equals("class " + name + ":")) { inClass = true; continue; }
                 if (inClass) {
                     if (!t.isEmpty() && !rawLine.startsWith("    ") && !rawLine.startsWith("\t") && !t.startsWith("#")) { inClass = false; continue; }
                     if (t.startsWith("@") || t.startsWith("#") || t.startsWith("def ") || t.startsWith("class ")) continue;
@@ -263,5 +278,73 @@ public class FastAPIParser implements ParserPlugin {
             Path c = root.resolve(f); if (Files.exists(c)) { try { if (Files.readString(c).toLowerCase().contains(dep)) return true; } catch (IOException ignored) {} }
         }
         return false;
+    }
+
+    /** Scan the whole repo for include_router(..., prefix="...") and build a module→prefix map. */
+    private Map<String, String> buildExternalPrefixMap(Path root) {
+        Map<String, String> map = new HashMap<>();
+        try {
+            Files.walk(root)
+                .filter(p -> p.toString().endsWith(".py"))
+                .forEach(f -> {
+                    try {
+                        Matcher m = INCLUDE_ROUTER.matcher(Files.readString(f));
+                        while (m.find()) map.putIfAbsent(m.group(1), m.group(2));
+                    } catch (IOException ignored) {}
+                });
+        } catch (IOException ignored) {}
+        return map;
+    }
+
+    /** Extract the local router prefix from APIRouter(prefix="...") in the file. */
+    private String findLocalPrefix(String fileContent) {
+        Matcher m = LOCAL_PREFIX.matcher(fileContent);
+        return m.find() ? m.group(1) : "";
+    }
+
+    /**
+     * Match the file's module name against the externalPrefixMap.
+     * Handles the common convention: "users.py" referenced as "users.router".
+     */
+    private String resolveExternalPrefix(Path file, Map<String, String> externalPrefixMap) {
+        String mod = file.getFileName().toString().replace(".py", "");
+        return externalPrefixMap.entrySet().stream()
+                .filter(e -> e.getKey().equals(mod) || e.getKey().startsWith(mod + "."))
+                .map(Map.Entry::getValue)
+                .findFirst()
+                .orElse("");
+    }
+
+    /** Ensure prefix starts with '/' if non-empty and has no trailing slash. */
+    private String normalizePathPrefix(String prefix) {
+        if (prefix == null || prefix.isEmpty()) return "";
+        String s = prefix.startsWith("/") ? prefix : "/" + prefix;
+        return s.endsWith("/") ? s.substring(0, s.length() - 1) : s;
+    }
+
+    /**
+     * Inject PATH parameters for any {token} in the path that has no declared parameter.
+     * Handles Depends-injected path params whose type the function-signature scanner can't trace.
+     */
+    private void ensurePathParamsPresent(ExtractedApi api) {
+        if (api.getPath() == null) return;
+        List<ApiParameter> existing = api.getParameters();
+        Set<String> declared = new HashSet<>();
+        if (existing != null) existing.forEach(p -> declared.add(p.getName()));
+        List<ApiParameter> toAdd = new ArrayList<>();
+        Matcher m = Pattern.compile("\\{(\\w+)\\}").matcher(api.getPath());
+        while (m.find()) {
+            String name = m.group(1);
+            if (declared.add(name)) {
+                ApiParameter p = new ApiParameter();
+                p.setName(name); p.setLocation("PATH"); p.setRequired(true); p.setType("string");
+                toAdd.add(p);
+            }
+        }
+        if (!toAdd.isEmpty()) {
+            List<ApiParameter> merged = new ArrayList<>(toAdd); // path params first
+            if (existing != null) merged.addAll(existing);
+            api.setParameters(merged);
+        }
     }
 }

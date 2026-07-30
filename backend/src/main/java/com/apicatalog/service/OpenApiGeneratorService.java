@@ -17,6 +17,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Generates an OpenAPI 3.1.0 document from the persisted ApiEndpoint rows,
@@ -108,6 +110,11 @@ public class OpenApiGeneratorService {
                 }
             }
         }
+        // Also register complex types found in field definitions (nested DTOs, e.g. author: Profile)
+        for (ApiEndpoint ep : repo.getEndpoints()) {
+            collectFieldTypes(ep.getRequestBodyFields(),  rawToSanitized);
+            collectFieldTypes(ep.getResponseBodyFields(), rawToSanitized);
+        }
         Set<String> schemaNames = new LinkedHashSet<>(rawToSanitized.values());
         Map<String, ApiEndpoint> schemaSourceEndpoint = new LinkedHashMap<>();
         for (ApiEndpoint ep : repo.getEndpoints()) {
@@ -195,6 +202,27 @@ public class OpenApiGeneratorService {
                 param.put("schema", typeToSchema(p.getType()));
                 params.add(param);
             }
+        }
+        // Auto-inject path parameters present in the URL template but not in the params list
+        if (ep.getPath() != null) {
+            Set<String> declaredPathParams = new HashSet<>();
+            for (Map<String, Object> p : params) {
+                if ("path".equals(p.get("in"))) declaredPathParams.add((String) p.get("name"));
+            }
+            List<Map<String, Object>> injected = new ArrayList<>();
+            Matcher pathVarM = Pattern.compile("\\{([^}]+)\\}").matcher(ep.getPath());
+            while (pathVarM.find()) {
+                String pName = pathVarM.group(1);
+                if (declaredPathParams.add(pName)) {
+                    Map<String, Object> pathParam = new LinkedHashMap<>();
+                    pathParam.put("name", pName);
+                    pathParam.put("in", "path");
+                    pathParam.put("required", true);
+                    pathParam.put("schema", Map.of("type", "string"));
+                    injected.add(pathParam);
+                }
+            }
+            params.addAll(0, injected);
         }
         if (!params.isEmpty()) op.put("parameters", params);
 
@@ -313,6 +341,10 @@ public class OpenApiGeneratorService {
             case "bytes"                             -> Map.of("type", "string", "format", "binary");
             case "Any", "any", "object",
                  "dict", "Dict"                     -> Map.of("type", "object");
+            // ── Pydantic / FastAPI special types ────────────────
+            case "EmailStr"                          -> Map.of("type", "string", "format", "email");
+            case "HttpUrl", "AnyUrl", "Url"          -> Map.of("type", "string", "format", "uri");
+            case "condecimal", "Decimal"             -> Map.of("type", "number");
             // ── TypeScript ─────────────────────────────────────
             case "unknown", "never"                  -> Map.of("type", "object");
             // ── Go ─────────────────────────────────────────────
@@ -325,12 +357,14 @@ public class OpenApiGeneratorService {
                 // ── Python generics: list[X], Optional[X], dict[K,V] ──
                 if (type.startsWith("list[") || type.startsWith("List[") ||
                     type.startsWith("set[")  || type.startsWith("Set[")) {
-                    String inner = type.replaceAll("^\\w+\\[(.+)\\]$", "$1").trim();
-                    yield Map.of("type", "array", "items", typeToSchema(inner));
+                    // Safe extraction: no regex, no catastrophic backtracking
+                    String inner = extractBracketInner(type);
+                    yield inner == null ? Map.of("type", "array")
+                            : Map.of("type", "array", "items", typeToSchema(inner));
                 }
                 if (type.startsWith("Optional[")) {
-                    String inner = type.replaceAll("^Optional\\[(.+)\\]$", "$1").trim();
-                    yield typeToSchema(inner);
+                    String inner = extractBracketInner(type);
+                    yield inner == null ? Map.of("type", "object") : typeToSchema(inner);
                 }
                 if (type.startsWith("dict[") || type.startsWith("Dict[")) {
                     yield Map.of("type", "object");
@@ -341,15 +375,15 @@ public class OpenApiGeneratorService {
                 // ── Java generics: List<X>, Set<X>, etc. ──────────────
                 if (type.startsWith("List<") || type.startsWith("Set<") ||
                     type.startsWith("Collection<") || type.startsWith("Iterable<")) {
-                    String inner = type.replaceAll("^\\w+<(.+)>$", "$1").trim();
-                    yield Map.of("type", "array", "items", typeToSchema(inner));
+                    String inner = extractAngleInner(type);
+                    yield inner == null ? Map.of("type", "array")
+                            : Map.of("type", "array", "items", typeToSchema(inner));
                 }
                 if (type.startsWith("Map<") || type.startsWith("HashMap<")) {
                     yield Map.of("type", "object");
                 }
                 // ── Union / nullable suffixes ──────────────────────────
                 if (type.contains("|") || type.contains("?")) {
-                    // e.g. "str | None", "string | null" — use the first non-null part
                     String first = type.split("[|?]")[0].trim();
                     yield typeToSchema(first);
                 }
@@ -365,6 +399,24 @@ public class OpenApiGeneratorService {
                 yield Map.of("$ref", "#/components/schemas/" + type);
             }
         };
+    }
+
+    /** Safely extract the inner type from bracket generics: list[T] → T. */
+    private String extractBracketInner(String type) {
+        int open = type.indexOf('[');
+        if (open < 0) return null;
+        int close = type.lastIndexOf(']');
+        if (close <= open) return null;
+        return type.substring(open + 1, close).trim();
+    }
+
+    /** Safely extract the inner type from angle generics: List<T> → T. */
+    private String extractAngleInner(String type) {
+        int open = type.indexOf('<');
+        if (open < 0) return null;
+        int close = type.lastIndexOf('>');
+        if (close <= open) return null;
+        return type.substring(open + 1, close).trim();
     }
 
     /**
@@ -391,6 +443,33 @@ public class OpenApiGeneratorService {
         // Collapse multiple underscores / trim leading+trailing
         name = name.replaceAll("_+", "_").replaceAll("^_+|_+$", "");
         return name.isEmpty() ? "Schema" : name;
+    }
+
+    /**
+     * Collects complex field types into rawToSanitized so nested DTOs get schema stubs.
+     */
+    private void collectFieldTypes(List<ApiField> fields, Map<String, String> rawToSanitized) {
+        if (fields == null) return;
+        for (ApiField f : fields) {
+            String base = extractBaseFieldType(f.getType());
+            if (base != null && !rawToSanitized.containsKey(base) && !isPrimitive(base)) {
+                rawToSanitized.put(base, sanitizeSchemaName(base));
+            }
+        }
+    }
+
+    /** Strip Optional[T], List[T], list[T] etc. to get the bare type name. */
+    private String extractBaseFieldType(String type) {
+        if (type == null) return null;
+        type = type.trim();
+        for (String prefix : List.of("Optional[", "List[", "Set[", "list[", "set[")) {
+            if (type.startsWith(prefix)) {
+                int open = type.indexOf('['), close = type.lastIndexOf(']');
+                if (open >= 0 && close > open) return type.substring(open + 1, close).trim();
+            }
+        }
+        // Only accept plain identifiers (no spaces, brackets, generics)
+        return type.matches("[a-zA-Z][a-zA-Z0-9_]*") ? type : null;
     }
 
     private String statusDescription(int code) {
