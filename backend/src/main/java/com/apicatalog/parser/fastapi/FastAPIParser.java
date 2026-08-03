@@ -2,6 +2,7 @@ package com.apicatalog.parser.fastapi;
 
 import com.apicatalog.model.*;
 import com.apicatalog.parser.ParserPlugin;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -11,7 +12,11 @@ import java.util.*;
 import java.util.regex.*;
 import java.util.stream.Collectors;
 
+/**
+ * Regex-based FastAPI parser. Used as a fallback when tree-sitter is unavailable.
+ */
 @Component
+@Order(10)  // Lower priority — TreeSitterFastAPIParser (Order 0) takes precedence
 public class FastAPIParser implements ParserPlugin {
 
     private static final Pattern DECORATOR = Pattern.compile(
@@ -95,8 +100,8 @@ public class FastAPIParser implements ParserPlugin {
             String httpMethod = dm.group(1).toUpperCase();
             String decoratorArgs = dm.group(2);
             Matcher pathM = DEC_PATH.matcher(decoratorArgs);
-            if (!pathM.find()) continue;
-            String routePath = pathM.group(1);
+            // No quoted first arg means path comes entirely from the prefix (e.g. @router.get(response_model=...))
+            String routePath = pathM.find() ? pathM.group(1) : "";
             if (!routePath.isEmpty() && !routePath.startsWith("/")) continue; // decorator arg mistaken for path
             String path = routePath.isEmpty() ? pathPrefix : pathPrefix + routePath;
             if (path.isEmpty()) path = "/";

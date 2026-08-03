@@ -111,7 +111,8 @@ public class EndpointEnrichmentService {
                 String response = llmClient.complete(SYSTEM_PROMPT, prompt);
                 mergeResponse(response, toEnrich, apis);
             } catch (Exception e) {
-                log.warn("LLM enrichment failed for {}: {}", relPath, e.getMessage());
+                log.warn("LLM enrichment failed for {}: {} ({})", relPath,
+                        e.getMessage() != null ? e.getMessage() : e.getClass().getName(), e.getClass().getSimpleName(), e);
                 // Degrade gracefully — leave endpoints without AI content
             }
         }

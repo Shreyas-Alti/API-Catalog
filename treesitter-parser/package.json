@@ -1,0 +1,21 @@
+{
+  "name": "@api-catalog/treesitter-parser",
+  "version": "1.0.0",
+  "description": "Tree-sitter based FastAPI parser for API Catalog",
+  "main": "src/index.js",
+  "bin": {
+    "ts-parse": "./src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test src/__tests__/fastapi.test.js"
+  },
+  "dependencies": {
+    "tree-sitter": "^0.22.4",
+    "tree-sitter-python": "^0.23.6"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "private": true
+}
