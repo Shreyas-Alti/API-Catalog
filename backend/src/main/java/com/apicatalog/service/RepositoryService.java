@@ -65,18 +65,18 @@ public class RepositoryService {
                 apis             = imported.get();
                 framework        = "OpenAPI (imported)";
                 fromImportedSpec = true;
-                // Skip enrichment — every imported endpoint already has a description,
-                // so EndpointEnrichmentService would no-op anyway; skip explicitly for clarity.
             } else {
-                // ── Standard path: detect framework → extract → enrich ────────
+                // ── Standard path: detect framework → extract ─────────────────
                 framework = extractionService.detectFramework(tempDir);
                 boolean supported = !"Unsupported".equals(framework);
                 apis = supported ? extractionService.extract(tempDir) : List.of();
                 fromImportedSpec = false;
+            }
 
-                if (!apis.isEmpty()) {
-                    enrichmentService.enrich(apis, tempDir, repoName);
-                }
+            // Always enrich — LLM skips endpoints that already have a summary,
+            // so spec-imported endpoints only get enriched where descriptions are missing.
+            if (!apis.isEmpty()) {
+                enrichmentService.enrich(apis, tempDir, repoName);
             }
 
             // Groups for the extraction report

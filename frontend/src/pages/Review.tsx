@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { saveRepository } from '../api/client'
 import type { SubmitResponse, ExtractedApi } from '../api/client'
@@ -30,6 +30,8 @@ function rowClass(ep: ExtractedApi) {
   return 'row-ai-generated'
 }
 
+type Filter = 'all' | 'review' | 'ai' | 'done'
+
 export default function Review() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -40,6 +42,24 @@ export default function Review() {
   const [buf, setBuf] = useState<ExtractedApi | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [filter, setFilter] = useState<Filter>('all')
+
+  const stats = useMemo(() => ({
+    all: apis.length,
+    review: apis.filter(a => !a.manuallyEdited && a.needsReview).length,
+    ai: apis.filter(a => !a.manuallyEdited && a.aiGenerated && !a.needsReview).length,
+    done: apis.filter(a => a.manuallyEdited).length,
+  }), [apis])
+
+  const displayedRows = useMemo(() =>
+    apis.map((a, i) => [i, a] as [number, ExtractedApi]).filter(([, a]) => {
+      if (filter === 'review') return !a.manuallyEdited && a.needsReview
+      if (filter === 'ai')     return !a.manuallyEdited && a.aiGenerated && !a.needsReview
+      if (filter === 'done')   return a.manuallyEdited
+      return true
+    }),
+    [apis, filter]
+  )
 
   if (!result) {
     return (
@@ -53,6 +73,7 @@ export default function Review() {
 
   const startEdit = (i: number) => { setEditingIdx(i); setBuf({ ...apis[i] }) }
   const cancelEdit = () => { setEditingIdx(null); setBuf(null) }
+  const changeFilter = (f: Filter) => { cancelEdit(); setFilter(f) }
   const applyEdit = () => {
     if (editingIdx === null || !buf) return
     const updated = [...apis]
@@ -112,21 +133,43 @@ export default function Review() {
 
       {error && <div className="alert alert-error">{error}</div>}
 
+      <div className="review-stats-bar">
+        <button className={`rsb-chip${filter === 'all' ? ' rsb-chip--active' : ''}`} onClick={() => changeFilter('all')}>
+          All <span className="rsb-count">{stats.all}</span>
+        </button>
+        {stats.review > 0 && (
+          <button className={`rsb-chip${filter === 'review' ? ' rsb-chip--active rsb-chip--review-active' : ''}`} onClick={() => changeFilter('review')}>
+            Needs review <span className="rsb-count rsb-count--yellow">{stats.review}</span>
+          </button>
+        )}
+        {stats.ai > 0 && (
+          <button className={`rsb-chip${filter === 'ai' ? ' rsb-chip--active' : ''}`} onClick={() => changeFilter('ai')}>
+            AI generated <span className="rsb-count">{stats.ai}</span>
+          </button>
+        )}
+        {stats.done > 0 && (
+          <button className={`rsb-chip${filter === 'done' ? ' rsb-chip--active rsb-chip--done-active' : ''}`} onClick={() => changeFilter('done')}>
+            Reviewed <span className="rsb-count rsb-count--green">{stats.done}</span>
+          </button>
+        )}
+      </div>
+
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <table className="review-table">
           <thead>
             <tr>
-              <th style={{ width: '38%' }}>Endpoint</th>
+              <th style={{ width: '36%' }}>Endpoint</th>
               <th>Summary / Description</th>
+              <th style={{ width: '90px' }}>Params</th>
               <th style={{ width: '120px' }}>Status</th>
-              <th style={{ width: '60px' }}></th>
+              <th style={{ width: '52px' }}></th>
             </tr>
           </thead>
           <tbody>
-            {apis.map((ep, i) =>
-              editingIdx === i && buf ? (
-                <tr key={i} className="editing-row" style={{ cursor: 'default' }}>
-                  <td colSpan={4}>
+            {displayedRows.map(([origIdx, ep]) =>
+              editingIdx === origIdx && buf ? (
+                <tr key={origIdx} className="editing-row" style={{ cursor: 'default' }}>
+                  <td colSpan={5}>
                     <div style={{ padding: '0.65rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
                       <div style={{ display: 'flex', gap: '0.5rem' }}>
                         <select
@@ -138,6 +181,7 @@ export default function Review() {
                           {METHODS.map(m => <option key={m}>{m}</option>)}
                         </select>
                         <input
+                          autoFocus
                           className="input-sm mono"
                           style={{ flex: 1 }}
                           value={buf.path ?? ''}
@@ -160,7 +204,7 @@ export default function Review() {
                         style={{ resize: 'vertical' }}
                       />
                       <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'flex-end' }}>
-                        <button className="btn-xs btn-red" onClick={() => deleteRow(i)}>Delete</button>
+                        <button className="btn-xs btn-red" onClick={() => deleteRow(origIdx)}>Delete</button>
                         <button className="btn-xs btn-gray" onClick={cancelEdit}>Cancel</button>
                         <button className="btn-xs btn-green" onClick={applyEdit}>Apply</button>
                       </div>
@@ -168,27 +212,58 @@ export default function Review() {
                   </td>
                 </tr>
               ) : (
-                <tr key={i} className={rowClass(ep)} onClick={() => startEdit(i)}>
+                <tr key={origIdx} className={`${rowClass(ep)} review-row`} onClick={() => startEdit(origIdx)}>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <MethodBadge method={ep.method} />
-                      <span className="mono" style={{ fontSize: '0.88rem' }}>{ep.path}</span>
+                      <div>
+                        <div className="mono" style={{ fontSize: '0.88rem' }}>{ep.path}</div>
+                        {(ep.handler || ep.controller) && (
+                          <div className="review-sub">
+                            {ep.controller ? `${ep.controller}` : ''}{ep.controller && ep.handler ? ' · ' : ''}{ep.handler ?? ''}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </td>
                   <td style={{ color: 'var(--text-secondary)', fontSize: '0.88rem' }}>
                     {ep.summary || ep.description || <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                    {ep.sourceFile && (
+                      <div className="review-sub review-sub--file">{ep.sourceFile}{ep.sourceLine ? `:${ep.sourceLine}` : ''}</div>
+                    )}
+                  </td>
+                  <td>
+                    {ep.parameters && ep.parameters.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.2rem' }}>
+                        {['PATH','QUERY','BODY'].map(loc => {
+                          const count = ep.parameters!.filter(p => p.location === loc).length
+                          return count > 0 ? (
+                            <span key={loc} className="param-loc-chip" data-loc={loc.toLowerCase()}>
+                              {count} {loc.toLowerCase()}
+                            </span>
+                          ) : null
+                        })}
+                      </div>
+                    )}
                   </td>
                   <td><StatusChip ep={ep} /></td>
                   <td>
                     <button
                       className="btn-xs btn-gray"
-                      onClick={e => { e.stopPropagation(); startEdit(i) }}
+                      onClick={e => { e.stopPropagation(); startEdit(origIdx) }}
                     >
                       Edit
                     </button>
                   </td>
                 </tr>
               )
+            )}
+            {displayedRows.length === 0 && (
+              <tr>
+                <td colSpan={5} style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--text-muted)', fontSize: '0.88rem' }}>
+                  No endpoints in this view
+                </td>
+              </tr>
             )}
           </tbody>
         </table>

@@ -3,6 +3,22 @@ import { submitRepository } from '../api/client'
 import type { SubmitResponse } from '../api/client'
 import { EXTRACTION_STAGES } from '../constants/extractionStages'
 
+const FRAMEWORKS = [
+  { name: 'FastAPI',      lang: 'Python',     color: '#009688' },
+  { name: 'Django',       lang: 'Python',     color: '#44b78b' },
+  { name: 'Flask',        lang: 'Python',     color: '#8a8a8a' },
+  { name: 'Spring Boot',  lang: 'Java',       color: '#6db33f' },
+  { name: 'JAX-RS',       lang: 'Java',       color: '#ff6f00' },
+  { name: 'Express',      lang: 'Node.js',    color: '#cbca3e' },
+  { name: 'NestJS',       lang: 'Node.js',    color: '#e0234e' },
+  { name: 'Fastify',      lang: 'Node.js',    color: '#888' },
+  { name: 'Koa',          lang: 'Node.js',    color: '#33a0ff' },
+  { name: 'Gin',          lang: 'Go',         color: '#00acd7' },
+  { name: 'Echo',         lang: 'Go',         color: '#00acc1' },
+  { name: 'Fiber',        lang: 'Go',         color: '#00b4d8' },
+  { name: 'ASP.NET',      lang: 'C#',         color: '#512bd4' },
+]
+
 interface Props {
   onClose: () => void
   onSubmitted: (result: SubmitResponse) => void
@@ -126,6 +142,19 @@ export default function AddRepoDialog({ onClose, onSubmitted }: Props) {
                   </button>
                 </div>
               </form>
+
+              <div className="dialog-fw-section">
+                <p className="dialog-fw-label">Supported frameworks</p>
+                <div className="dialog-fw-grid">
+                  {FRAMEWORKS.map(fw => (
+                    <div key={fw.name} className="dialog-fw-chip">
+                      <span className="dialog-fw-dot" style={{ background: fw.color }} />
+                      <span className="dialog-fw-name">{fw.name}</span>
+                      <span className="dialog-fw-lang">{fw.lang}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </>
         )}

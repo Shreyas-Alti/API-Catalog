@@ -101,6 +101,9 @@ function App() {
       <nav className="navbar">
         <NavLink to="/" className="navbar-brand" end>API Catalog</NavLink>
         <div className="navbar-links">
+          <NavLink to="/" end className={({ isActive }) => isActive ? 'nav-link nav-link--active' : 'nav-link'}>
+            Home
+          </NavLink>
           <ReposDropdown />
         </div>
         <ThemeToggle dark={dark} toggle={toggle} />

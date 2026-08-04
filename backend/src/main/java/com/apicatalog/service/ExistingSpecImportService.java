@@ -33,7 +33,8 @@ public class ExistingSpecImportService {
             "openapi.yaml", "openapi.yml", "openapi.json",
             "swagger.yaml", "swagger.yml", "swagger.json");
 
-    private static final List<String> SPEC_DIRS = List.of("", "docs/", "api/", ".github/");
+    private static final List<String> SPEC_DIRS = List.of(
+            "", "docs/", "api/", "spec/", "specs/", "openapi/", ".github/", "src/main/resources/");
 
     /** Scan conventional locations for a committed OpenAPI / Swagger spec file. */
     public Optional<Path> findExistingSpec(Path repoRoot) {
